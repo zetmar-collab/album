@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Album</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">◉</span>
+      <div>
+        <h1>Album</h1>
+        <div class="brand-sub" id="stats"></div>
+      </div>
+    </div>
+    <input type="search" id="searchInput" placeholder="Szukaj w kolekcji… (wykonawca, tytuł, wytwórnia)" />
+    <div class="topbar-actions">
+      <button id="btnAdd" class="btn btn-primary">＋ Dodaj</button>
+      <button id="btnPhone" class="btn">📱 Skanuj telefonem</button>
+      <button id="btnSettings" class="btn btn-icon" title="Ustawienia i kopia zapasowa">⚙</button>
+    </div>
+  </header>
+
+  <nav class="filterbar">
+    <div class="format-filters" id="formatFilters">
+      <button class="chip active" data-format="all">Wszystkie</button>
+      <button class="chip" data-format="vinyl">Winyle</button>
+      <button class="chip" data-format="cd">CD</button>
+      <button class="chip" data-format="cassette">Kasety</button>
+    </div>
+    <label class="sort-label">Sortuj:
+      <select id="sortSelect">
+        <option value="artist">Wykonawca</option>
+        <option value="title">Tytuł</option>
+        <option value="year">Rok</option>
+        <option value="addedAt">Ostatnio dodane</option>
+      </select>
+    </label>
+    <div class="view-toggle" id="viewToggle">
+      <button class="chip active" data-view="grid" title="Widok siatki">⊞ Siatka</button>
+      <button class="chip" data-view="list" title="Widok listy">☰ Lista</button>
+    </div>
+  </nav>
+
+  <main id="grid" class="grid"></main>
+  <div id="emptyState" class="empty hidden">
+    <div class="empty-icon">🎵</div>
+    <h2>Kolekcja jest pusta</h2>
+    <p>Dodaj pierwszą płytę ręcznie lub zeskanuj kod kreskowy telefonem.</p>
+  </div>
+
+  <!-- Modal: dodawanie / edycja -->
+  <div class="modal-backdrop hidden" id="editModal">
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2 id="editTitle">Dodaj pozycję</h2>
+        <button class="btn btn-icon modal-close" data-close="editModal">✕</button>
+      </div>
+      <div class="modal-body edit-layout">
+        <div class="edit-cover">
+          <div class="cover-preview" id="coverPreview"><span>Brak okładki</span></div>
+          <button id="btnPickCover" class="btn btn-small">Wybierz plik…</button>
+          <button id="btnClearCover" class="btn btn-small">Usuń okładkę</button>
+        </div>
+        <div class="edit-fields">
+          <div class="search-online">
+            <input type="text" id="onlineQuery" placeholder="Szukaj w MusicBrainz i Discogs (wykonawca, tytuł lub kod kreskowy)" />
+            <button id="btnOnlineSearch" class="btn">🔍 Szukaj</button>
+          </div>
+          <div id="onlineInfo" class="online-info hidden"></div>
+          <div id="onlineResults" class="online-results hidden"></div>
+          <div id="onlineErrors" class="online-errors hidden"></div>
+
+          <div class="form-grid">
+            <label>Format
+              <select id="fFormat">
+                <option value="vinyl">Winyl</option>
+                <option value="cd">CD</option>
+                <option value="cassette">Kaseta</option>
+              </select>
+            </label>
+            <label>Wykonawca <input type="text" id="fArtist" /></label>
+            <label>Tytuł <input type="text" id="fTitle" /></label>
+            <label>Rok <input type="text" id="fYear" /></label>
+            <label>Wytwórnia <input type="text" id="fLabel" /></label>
+            <label>Nr katalogowy <input type="text" id="fCatalog" /></label>
+            <label>Kod kreskowy <input type="text" id="fBarcode" /></label>
+            <label>Gatunek <input type="text" id="fGenre" /></label>
+            <label>Kraj <input type="text" id="fCountry" /></label>
+            <label>Stan
+              <select id="fCondition">
+                <option value="">—</option>
+                <option>Nowy (M)</option>
+                <option>Prawie nowy (NM)</option>
+                <option>Bardzo dobry+ (VG+)</option>
+                <option>Bardzo dobry (VG)</option>
+                <option>Dobry (G)</option>
+                <option>Słaby (F/P)</option>
+              </select>
+            </label>
+            <label class="span2">Lista utworów
+              <textarea id="fTracks" rows="6" placeholder="np. 1. Tytuł utworu (3:45) — uzupełnia się automatycznie po wybraniu wyniku z Discogs/MusicBrainz"></textarea>
+            </label>
+            <label class="span2">Notatki <textarea id="fNotes" rows="2"></textarea></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button id="btnDelete" class="btn btn-danger hidden">Usuń</button>
+        <span class="spacer"></span>
+        <button class="btn" data-close="editModal">Anuluj</button>
+        <button id="btnSave" class="btn btn-primary">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: skanowanie telefonem -->
+  <div class="modal-backdrop hidden" id="phoneModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Skanowanie telefonem</h2>
+        <button class="btn btn-icon modal-close" data-close="phoneModal">✕</button>
+      </div>
+      <div class="modal-body phone-body">
+        <p>Zeskanuj kod QR telefonem (aparat lub przeglądarka).<br/>Telefon musi być w <b>tej samej sieci Wi‑Fi</b> co komputer.</p>
+        <img id="phoneQr" class="qr" alt="Kod QR" />
+        <div class="phone-url" id="phoneUrl"></div>
+        <div class="hint" id="phoneAlt"></div>
+        <p class="hint">Jeśli strona nie otwiera się na telefonie:<br/>
+          1. Zezwól aplikacji Album na dostęp do sieci w zaporze Windows (okno pojawia się przy pierwszym uruchomieniu).<br/>
+          2. Upewnij się, że telefon jest w tej samej sieci Wi‑Fi (nie w sieci gościnnej i nie na danych komórkowych).<br/>
+          3. Jeśli nadal nie działa, w ustawieniach routera wyłącz „izolację klientów" (AP isolation).</p>
+        <div id="phoneLog" class="phone-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: ustawienia -->
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Ustawienia</h2>
+        <button class="btn btn-icon modal-close" data-close="settingsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="discogsStatus" class="discogs-status">Sprawdzam połączenie z Discogs…</div>
+        <label class="settings-label">Token Discogs
+          <input type="text" id="discogsToken" placeholder="Wklej osobisty token z discogs.com" />
+        </label>
+        <p class="hint">Bez tokenu działa tylko MusicBrainz, w którym brakuje większości polskich wydań
+          (zwłaszcza kodów kreskowych). Darmowy token: zaloguj się na discogs.com, a potem skopiuj
+          <b>osobisty token</b> (przycisk <i>Generate new token</i>) — nie „Consumer Key/Secret".</p>
+        <div class="backup-buttons">
+          <button id="btnDiscogsPage" class="btn">🌐 Otwórz stronę tokenu Discogs</button>
+          <button id="btnSaveSettings" class="btn btn-primary">Zapisz ustawienia</button>
+        </div>
+        <hr/>
+        <h3>Kopia zapasowa</h3>
+        <p class="hint">Kopia zawiera całą kolekcję wraz z okładkami (plik ZIP).</p>
+        <div class="backup-buttons">
+          <button id="btnExport" class="btn">⬇ Utwórz kopię zapasową…</button>
+          <button id="btnImport" class="btn">⬆ Przywróć z kopii…</button>
+        </div>
+        <hr/>
+        <h3>Eksport</h3>
+        <p class="hint">Zapisuje całą kolekcję jako arkusz Excel (.xlsx).</p>
+        <button id="btnExcel" class="btn">📊 Eksportuj do Excela…</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

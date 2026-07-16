@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Album — skaner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #14151a;
+      color: #e8eaf0;
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 22px; text-align: center; margin: 10px 0 2px; }
+    h1 span { color: #e05a3a; }
+    .sub { text-align: center; color: #9aa0b0; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #1e2028;
+      border: 1px solid #343845;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card h2 { font-size: 15px; margin-bottom: 4px; }
+    .card p { font-size: 12px; color: #9aa0b0; margin-bottom: 12px; line-height: 1.4; }
+    .bigbtn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      border-radius: 10px;
+      border: none;
+      background: #e05a3a;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+    }
+    .bigbtn.secondary { background: #262933; border: 1px solid #343845; }
+    input[type="file"] { display: none; }
+    .manual { display: flex; gap: 8px; }
+    .manual input {
+      flex: 1;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #343845;
+      background: #14151a;
+      color: #e8eaf0;
+      font-size: 16px;
+    }
+    .manual button {
+      padding: 14px 18px;
+      border-radius: 10px;
+      border: none;
+      background: #e05a3a;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    #status {
+      margin-top: 4px;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      display: none;
+    }
+    #status.ok { display: block; background: #1d3325; border: 1px solid #2f6b42; }
+    #status.err { display: block; background: #3a2020; border: 1px solid #7a3a3a; }
+    #status.busy { display: block; background: #262933; border: 1px solid #343845; }
+  </style>
+</head>
+<body>
+  <h1><span>◉</span> Album</h1>
+  <div class="sub">Skaner podłączony do komputera</div>
+
+  <div id="status"></div>
+
+  <div class="card">
+    <h2>📷 Skanuj kod kreskowy</h2>
+    <p>Zrób wyraźne zdjęcie kodu kreskowego z tyłu płyty. Komputer odczyta kod i wyszuka album w bazach MusicBrainz i Discogs.</p>
+    <label class="bigbtn" for="barcodePhoto">Zrób zdjęcie kodu</label>
+    <input type="file" id="barcodePhoto" accept="image/*" capture="environment" />
+  </div>
+
+  <div class="card">
+    <h2>⌨️ Wpisz kod ręcznie</h2>
+    <p>Jeśli zdjęcie się nie udaje, przepisz cyfry spod kodu kreskowego.</p>
+    <div class="manual">
+      <input type="tel" id="manualCode" placeholder="np. 5099749534728" />
+      <button id="sendManual">Wyślij</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🖼️ Zdjęcie okładki</h2>
+    <p>Zrób zdjęcie okładki — trafi do komputera jako okładka dodawanej pozycji.</p>
+    <label class="bigbtn secondary" for="coverPhoto">Zrób zdjęcie okładki</label>
+    <input type="file" id="coverPhoto" accept="image/*" capture="environment" />
+  </div>
+
+  <script>
+    'use strict';
+    const status = document.getElementById('status');
+
+    function show(cls, msg) {
+      status.className = cls;
+      status.textContent = msg;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function upload(url, file) {
+      const fd = new FormData();
+      fd.append('photo', file, 'photo.jpg');
+      const res = await fetch(url, { method: 'POST', body: fd });
+      return res.json();
+    }
+
+    document.getElementById('barcodePhoto').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      show('busy', '⏳ Wysyłam zdjęcie i odczytuję kod…');
+      try {
+        const r = await upload('/api/photo', file);
+        if (r.ok) {
+          show('ok', '✅ Odczytano kod ' + r.barcode + '. ' +
+            (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach — uzupełnij dane na komputerze.'));
+        } else {
+          show('err', '❌ ' + r.message);
+        }
+      } catch (err) {
+        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+      }
+    });
+
+    document.getElementById('sendManual').addEventListener('click', async () => {
+      const code = document.getElementById('manualCode').value.replace(/\D/g, '');
+      if (code.length < 7) { show('err', '❌ Kod jest za krótki.'); return; }
+      show('busy', '⏳ Wyszukuję kod ' + code + '…');
+      try {
+        const res = await fetch('/api/barcode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ barcode: code })
+        });
+        const r = await res.json();
+        if (r.ok) {
+          document.getElementById('manualCode').value = '';
+          show('ok', '✅ Wysłano kod ' + r.barcode + '. ' +
+            (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach.'));
+        } else {
+          show('err', '❌ ' + r.message);
+        }
+      } catch (err) {
+        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+      }
+    });
+
+    document.getElementById('coverPhoto').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      show('busy', '⏳ Wysyłam zdjęcie okładki…');
+      try {
+        const r = await upload('/api/cover', file);
+        if (r.ok) show('ok', '✅ Okładka trafiła na komputer.');
+        else show('err', '❌ ' + r.message);
+      } catch (err) {
+        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "name": "album",
+  "version": "1.0.0",
+  "description": "Album — kolekcja winyli, CD i kaset",
+  "main": "main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node build-icon.js",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.zetmarcollab.album",
+    "productName": "Album",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "phone/**",
+      "assets/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/zxing-wasm/**"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Album-${version}-portable.exe",
+      "unpackDirName": "AlbumApp"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Album-${version}-instalator.exe"
+    }
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.0",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "qrcode": "^1.5.4",
+    "xlsx": "^0.18.5",
+    "zxing-wasm": "^3.1.1"
+  },
+  "devDependencies": {
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "png2icons": "^2.0.1"
+  }
+}
