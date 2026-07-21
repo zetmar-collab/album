@@ -650,7 +650,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#14151a',
     title: 'Album',
-    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    icon: path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

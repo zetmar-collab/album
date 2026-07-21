@@ -16,7 +16,7 @@ Repeats the manual cycle used throughout development: stop the running instance,
    try { Stop-Process -Name electron -Force -ErrorAction Stop } catch {}
    ```
 
-2. **Build** (from the project root, `C:\Users\Marek\Album`):
+2. **Build** (from the project root, `%CD%`):
    ```powershell
    npx electron-builder --win
    ```
@@ -24,7 +24,7 @@ Repeats the manual cycle used throughout development: stop the running instance,
 
 3. **Launch the portable build**:
    ```powershell
-   Start-Process "C:\Users\Marek\Album\dist\Album-1.0.0-portable.exe"
+   Start-Process "%CD%\dist\Album-1.0.0-portable.exe"
    ```
    (Match the actual version in `dist/` — check `package.json` version if unsure.)
 

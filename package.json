@@ -3,12 +3,17 @@
   "version": "1.0.0",
   "description": "Album — kolekcja winyli, CD i kaset",
   "main": "main.js",
-  "author": "",
+  "homepage": "https://github.com/zetmar-collab/album",
+  "author": {
+    "name": "zetmar",
+    "email": "zetmar@gmail.com"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "icon": "node build-icon.js",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "build": {
     "appId": "com.zetmarcollab.album",
@@ -42,6 +47,15 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "Album-${version}-instalator.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "AudioVideo",
+      "artifactName": "Album-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {
