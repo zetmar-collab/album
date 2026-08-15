@@ -26,7 +26,7 @@ Publishes a new version to the public repo (github.com/zetmar-collab/album). Thi
    Agent({
      description: "Pre-release privacy audit",
      subagent_type: "privacy-auditor",
-     prompt: "Audit the Album repo (C:\\Users\\Marek\\Album) for leaked personal data before release vX.Y.Z. Check the git diff since the last tag AND extract+scan dist/win-unpacked/resources/app.asar (just rebuilt). Report pass/fail per category."
+     prompt: "Audit the Album repo (project root) for leaked personal data before release vX.Y.Z. Check the git diff since the last tag AND extract+scan dist/win-unpacked/resources/app.asar (just rebuilt). Report pass/fail per category."
    })
    ```
    If it reports any finding, stop and fix it (then re-run steps 4-5) before continuing. Do not publish on a "probably fine" — the whole point of this step is to not trust that.
