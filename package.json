@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "icon": "node build-icon.js",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:store": "electron-builder --win appx"
   },
   "build": {
     "appId": "com.zetmarcollab.album",
@@ -30,7 +31,8 @@
     "win": {
       "target": [
         "portable",
-        "nsis"
+        "nsis",
+        "appx"
       ],
       "icon": "assets/icon.ico"
     },
@@ -42,6 +44,18 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "Album-${version}-instalator.exe"
+    },
+    "appx": {
+      "applicationId": "AlbumCDVinyl",
+      "identityName": "MarekZettel-zetmar.AlbumCDVinyl",
+      "publisher": "CN=15A53D32-C868-48EE-B700-5DBB5449CA1B",
+      "publisherDisplayName": "Marek Zettel - zetmar",
+      "displayName": "Album CD&amp;Vinyl",
+      "backgroundColor": "#1e2028",
+      "capabilities": [
+        "internetClient",
+        "privateNetworkClientServer"
+      ]
     }
   },
   "dependencies": {
