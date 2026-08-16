@@ -2,6 +2,12 @@
 
 Aplikacja Windows i Linux do kolekcjonowania **winyli, płyt CD i kaset magnetofonowych**.
 
+## Instalacja
+
+**Windows — Microsoft Store (zalecane):** [pobierz Album ze Sklepu Microsoft](https://apps.microsoft.com/store/detail/9N456B4ZL0WH?cid=DevShareMCLPCS) — automatyczne aktualizacje, bez ręcznego pobierania plików.
+
+Alternatywnie: gotowe pliki `.exe`/`.AppImage`/`.deb` w folderze `dist` (patrz niżej) lub [Releases](https://github.com/zetmar-collab/album/releases).
+
 ## Gotowe pliki (folder `dist`)
 
 **Windows**
@@ -35,6 +41,7 @@ npm install         # zależności
 npm start           # uruchomienie w trybie deweloperskim
 npm run icon        # regeneracja assets/icon.ico z assets/icon.png
 npm run dist        # budowa dla Windows: portable + instalator (folder dist)
+npm run dist:store  # budowa pakietu AppX dla Microsoft Store (folder dist)
 npm run dist:linux  # budowa dla Linuksa: AppImage + deb (folder dist)
 ```
 
