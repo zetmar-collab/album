@@ -1,0 +1,143 @@
+package com.zetmarcollab.album.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.io.File
+import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+
+/** Sprawdza wymiane kopii zapasowej z aplikacja desktopowa (ZIP: collection.json + settings.json + covers/). */
+class StoreTest {
+  private lateinit var root: File
+  private lateinit var fixture: File
+
+  @Before
+  fun setUp() {
+    root = Files.createTempDirectory("album-test").toFile()
+    fixture = File(root, "desktop-backup.zip")
+    javaClass.getResourceAsStream("/desktop-backup.zip")!!.use { i -> fixture.outputStream().use { i.copyTo(it) } }
+  }
+
+  @After
+  fun tearDown() {
+    root.deleteRecursively()
+  }
+
+  private fun newStore(name: String = "data") = Store(File(root, name))
+
+  @Test
+  fun importsBackupMadeByDesktopApp() {
+    val store = newStore()
+    val info = store.inspectBackup(fixture)
+    assertEquals(3, info.itemCount)
+    assertEquals(3, info.newItemCount)
+    assertTrue(info.hasToken)
+
+    val r = store.importBackup(fixture, ImportMode.REPLACE)
+    assertEquals(3, r.total)
+    val first = store.items.first { it.id.endsWith("1") }
+    assertEquals("Zażółć gęślą jaźń", first.title)
+    assertEquals(Format.VINYL, first.format)
+    assertEquals("Uwaga \"cytat\"\ni nowa linia", first.notes)
+    assertEquals("Discogs", first.source)
+    assertNotNull(store.coverFileOf(first.coverFile))
+    assertEquals(Format.CASSETTE, store.items.first { it.id.endsWith("2") }.format)
+    assertNull(store.items.first { it.id.endsWith("2") }.coverFile)
+    // token z kopii przejmowany tylko gdy brak wlasnego
+    assertEquals("TEST-TOKEN-NOT-REAL", store.discogsToken)
+  }
+
+  @Test
+  fun mergeAddsOnlyMissingItems() {
+    val store = newStore()
+    store.upsert(Item(id = "aaaaaaaa-0000-4000-8000-000000000001", artist = "Lokalna wersja", title = "T"))
+    store.upsert(Item(id = "local-only", artist = "A", title = "B"))
+    val r = store.importBackup(fixture, ImportMode.MERGE)
+    assertEquals(2, r.added)
+    assertEquals(1, r.skipped)
+    assertEquals(4, store.items.size)
+    // istniejaca pozycja zostaje nietknieta
+    assertEquals("Lokalna wersja", store.items.first { it.id.endsWith("1") }.artist)
+  }
+
+  @Test
+  fun keepsOwnTokenOnImport() {
+    val store = newStore()
+    store.saveToken("MOJ-TOKEN")
+    store.importBackup(fixture, ImportMode.REPLACE)
+    assertEquals("MOJ-TOKEN", store.discogsToken)
+  }
+
+  @Test
+  fun exportedZipHasDesktopLayoutAndRoundTrips() {
+    val a = newStore("a")
+    a.importBackup(fixture, ImportMode.REPLACE)
+    val out = File(root, "android-export.zip")
+    out.outputStream().use { a.exportBackup(it) }
+
+    ZipFile(out).use { z ->
+      val names = z.entries().asSequence().map { it.name }.toSet()
+      assertTrue(names.containsAll(setOf("collection.json", "settings.json", "covers/cover-1.jpg")))
+      // `coverFile: missing.jpg` nie ma pliku na dysku, wiec nie trafia do ZIP-a
+      assertFalse("covers/missing.jpg" in names)
+      // klucze pozycji identyczne jak w desktopie
+      val arr = JSONArray(z.getInputStream(z.getEntry("collection.json")).readBytes().toString(Charsets.UTF_8))
+      val keys = arr.getJSONObject(0).keys().asSequence().toSet()
+      assertEquals(
+        setOf("id", "format", "artist", "title", "year", "label", "catalogNumber", "barcode", "genre", "country", "condition", "tracklist", "notes", "coverFile", "source", "sourceId", "addedAt"),
+        keys,
+      )
+      assertEquals("TEST-TOKEN-NOT-REAL", JSONObject(z.getInputStream(z.getEntry("settings.json")).readBytes().toString(Charsets.UTF_8)).getString("discogsToken"))
+    }
+
+    val b = newStore("b")
+    b.importBackup(out, ImportMode.REPLACE)
+    assertEquals(a.items, b.items)
+    // zapis do katalogu build dla sprawdzenia przez Node (adm-zip z desktopu)
+    File("build/test-output").mkdirs()
+    out.copyTo(File("build/test-output/android-export.zip"), overwrite = true)
+  }
+
+  @Test
+  fun rejectsNonBackupZip() {
+    val bad = File(root, "bad.zip")
+    ZipOutputStream(bad.outputStream()).use {
+      it.putNextEntry(ZipEntry("x.txt"))
+      it.write(1)
+    }
+    val e = runCatching { newStore().inspectBackup(bad) }.exceptionOrNull()
+    assertNotNull(e)
+    assertTrue(e!!.message!!.contains("collection.json"))
+  }
+
+  @Test
+  fun coverNamesCannotEscapeCoversDir() {
+    val item = Item.fromJson(JSONObject("""{"id":"x","format":"cd","coverFile":"../../evil.jpg"}"""))
+    assertEquals("evil.jpg", item.coverFile)
+  }
+
+  @Test
+  fun survivesRestart() {
+    val s1 = newStore()
+    s1.upsert(Item(artist = "A", title = "B", year = "1999"))
+    val s2 = newStore()
+    assertEquals(1, s2.items.size)
+    assertEquals("1999", s2.items[0].year)
+  }
+
+  @Test
+  fun barcodeVariants() {
+    assertEquals(listOf("724384260958", "0724384260958"), Lookup.barcodeVariants("724384260958"))
+    assertEquals(listOf("0724384260958", "724384260958"), Lookup.barcodeVariants("0724384260958"))
+  }
+}

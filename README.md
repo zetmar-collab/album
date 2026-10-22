@@ -28,6 +28,25 @@ Dane kolekcji są zapisywane w profilu użytkownika (Windows: `%APPDATA%\Album\a
 - Wyszukiwanie, filtrowanie po formacie, sortowanie, stan nośnika, notatki
 - **Kopia zapasowa**: eksport i przywracanie całej kolekcji wraz z okładkami (plik ZIP) — Ustawienia ⚙
 
+## Wersja na Androida (APK)
+
+W folderze `android/` jest natywna aplikacja na telefon (Kotlin + Jetpack Compose) z tymi samymi funkcjami: kolekcja winyli/CD/kaset, wyszukiwanie w MusicBrainz i Discogs, okładki, filtry i sortowanie. Zamiast serwera na komputerze telefon **sam skanuje kod kreskowy aparatem** (ML Kit, działa offline).
+
+**Wymiana bazy z wersją na komputer** — to ten sam format kopii zapasowej (ZIP z `collection.json`, `settings.json` i folderem `covers/`):
+- komputer → telefon: na komputerze *Ustawienia → Utwórz kopię zapasową*, plik ZIP przenieś na telefon (kabel, Dysk Google, e-mail…), w aplikacji *⚙ → Wczytaj kopię z pliku*;
+- telefon → komputer: w aplikacji *⚙ → Wyślij kopię na komputer* (lub *Zapisz kopię do pliku*), a na komputerze *Ustawienia → Przywróć z kopii*;
+- przy wczytywaniu na telefonie można **scalić** (dodaje tylko brakujące pozycje) albo **zastąpić** całą kolekcję; komputer zawsze zastępuje.
+- Kopia zawiera token Discogs — nie wysyłaj jej osobom trzecim.
+
+```
+cd android
+./gradlew assembleDebug     # APK testowy:  app/build/outputs/apk/debug/
+./gradlew assembleRelease   # APK wydania (wymaga keystore.properties, patrz niżej)
+./gradlew testDebugUnitTest # testy zgodności formatu kopii zapasowej
+```
+
+Podpis wydania: `android/keystore/` i `android/keystore.properties` są w `.gitignore` — **zrób ich kopię zapasową** (bez tego nie wydasz aktualizacji tej samej aplikacji). Bez `keystore.properties` `assembleRelease` zbuduje niepodpisany APK.
+
 ## Ważne informacje
 
 - **Token Discogs** (darmowy): zaloguj się na discogs.com → Settings → Developers → *Generate new token*, wklej w Ustawieniach aplikacji. MusicBrainz działa bez tokenu.

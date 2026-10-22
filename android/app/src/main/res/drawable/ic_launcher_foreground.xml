@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plyta winylowa - to samo logo co w aplikacji na komputer (assets/icon.png) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#14151A"
+        android:pathData="M54,54m-31,0a31,31 0,1 1,62 0a31,31 0,1 1,-62 0" />
+    <path
+        android:strokeColor="#3A3E4C"
+        android:strokeWidth="0.9"
+        android:pathData="M54,54m-27.5,0a27.5,27.5 0,1 1,55 0a27.5,27.5 0,1 1,-55 0" />
+    <path
+        android:strokeColor="#3A3E4C"
+        android:strokeWidth="0.9"
+        android:pathData="M54,54m-23.5,0a23.5,23.5 0,1 1,47 0a23.5,23.5 0,1 1,-47 0" />
+    <path
+        android:strokeColor="#3A3E4C"
+        android:strokeWidth="0.9"
+        android:pathData="M54,54m-19.5,0a19.5,19.5 0,1 1,39 0a19.5,19.5 0,1 1,-39 0" />
+    <path
+        android:fillColor="#E05A3A"
+        android:pathData="M54,54m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0" />
+    <path
+        android:fillColor="#14151A"
+        android:pathData="M54,54m-2.4,0a2.4,2.4 0,1 1,4.8 0a2.4,2.4 0,1 1,-4.8 0" />
+</vector>
