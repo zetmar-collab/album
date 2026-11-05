@@ -104,6 +104,9 @@
   <script>
     'use strict';
     const status = document.getElementById('status');
+    // Token sesji z adresu (QR) - bez niego komputer odrzuca wszystkie zapytania.
+    const TOKEN = new URLSearchParams(location.search).get('t') || '';
+    const AUTH = { 'X-Album-Token': TOKEN };
 
     function show(cls, msg) {
       status.className = cls;
@@ -111,11 +114,33 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    async function upload(url, file) {
+    // Zmniejsza zdjęcie przed wysłaniem (zdjęcia z aparatu mają kilka MB). Przy błędzie wysyła oryginał.
+    async function shrink(file, maxDim) {
+      try {
+        const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+        if (scale === 1 && file.size < 1500000) { bmp.close(); return file; }
+        const c = document.createElement('canvas');
+        c.width = Math.round(bmp.width * scale);
+        c.height = Math.round(bmp.height * scale);
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close();
+        const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+        return blob || file;
+      } catch (e) {
+        return file;
+      }
+    }
+
+    async function parse(res) {
+      try { return await res.json(); } catch (e) { return { ok: false, message: 'Nieoczekiwana odpowiedź komputera (HTTP ' + res.status + ').' }; }
+    }
+
+    async function upload(url, file, maxDim) {
       const fd = new FormData();
-      fd.append('photo', file, 'photo.jpg');
-      const res = await fetch(url, { method: 'POST', body: fd });
-      return res.json();
+      fd.append('photo', await shrink(file, maxDim), 'photo.jpg');
+      const res = await fetch(url, { method: 'POST', headers: AUTH, body: fd });
+      return parse(res);
     }
 
     document.getElementById('barcodePhoto').addEventListener('change', async (e) => {
@@ -124,7 +149,7 @@
       if (!file) return;
       show('busy', '⏳ Wysyłam zdjęcie i odczytuję kod…');
       try {
-        const r = await upload('/api/photo', file);
+        const r = await upload('/api/photo', file, 2200);
         if (r.ok) {
           show('ok', '✅ Odczytano kod ' + r.barcode + '. ' +
             (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach — uzupełnij dane na komputerze.'));
@@ -143,10 +168,10 @@
       try {
         const res = await fetch('/api/barcode', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...AUTH },
           body: JSON.stringify({ barcode: code })
         });
-        const r = await res.json();
+        const r = await parse(res);
         if (r.ok) {
           document.getElementById('manualCode').value = '';
           show('ok', '✅ Wysłano kod ' + r.barcode + '. ' +
@@ -165,7 +190,7 @@
       if (!file) return;
       show('busy', '⏳ Wysyłam zdjęcie okładki…');
       try {
-        const r = await upload('/api/cover', file);
+        const r = await upload('/api/cover', file, 1600);
         if (r.ok) show('ok', '✅ Okładka trafiła na komputer.');
         else show('err', '❌ ' + r.message);
       } catch (err) {

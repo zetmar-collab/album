@@ -32,6 +32,7 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +47,7 @@ import com.zetmarcollab.album.theme.AlbumPanel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(vm: AlbumViewModel) {
-  val visible = vm.visibleItems()
+  val visible = remember(vm.items, vm.query, vm.formatFilter, vm.sortKey) { vm.visibleItems() }
   val all = vm.items
 
   Scaffold(

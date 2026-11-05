@@ -11,6 +11,9 @@ import java.util.zip.ZipOutputStream
 
 enum class ImportMode { REPLACE, MERGE }
 
+/** Wynik wczytania pliku kolekcji przy starcie - pozwala pokazac uzytkownikowi, ze cos poszlo nie tak. */
+enum class LoadStatus { OK, MISSING, RESTORED, CORRUPT }
+
 data class BackupInfo(val itemCount: Int, val newItemCount: Int, val hasToken: Boolean)
 
 data class ImportResult(val added: Int, val skipped: Int, val total: Int)
@@ -22,10 +25,15 @@ data class ImportResult(val added: Int, val skipped: Int, val total: Int)
  *   album-data/covers/<plik>     - okladki
  * Kopia zapasowa to ZIP z `collection.json`, `settings.json` i folderem `covers/` - dokladnie ten
  * sam format, ktory tworzy i wczytuje wersja na komputer.
+ *
+ * Zapis jest atomowy (plik tymczasowy + zmiana nazwy), a poprzednia wersja kolekcji zostaje jako
+ * `collection.json.bak`. Uszkodzony plik nie jest po cichu zastepowany pusta lista: trafia do
+ * `collection.json.corrupt-<czas>`, a dane odzyskujemy z `.bak`.
  */
 class Store(private val dataDir: File) {
   private val coversDir = File(dataDir, "covers")
   private val dataFile = File(dataDir, "collection.json")
+  private val backupFile = File(dataDir, "collection.json.bak")
   private val settingsFile = File(dataDir, "settings.json")
 
   var items: List<Item> = emptyList()
@@ -34,26 +42,57 @@ class Store(private val dataDir: File) {
   var discogsToken: String = ""
     private set
 
+  var loadStatus: LoadStatus = LoadStatus.OK
+    private set
+
+  /** Ile elementow pliku kolekcji pominieto jako nieprawidlowe. */
+  var skippedOnLoad: Int = 0
+    private set
+
   init {
+    dataDir.mkdirs()
     coversDir.mkdirs()
     load()
   }
 
   private fun load() {
-    items = runCatching { Item.listFromJson(dataFile.readText()) }.getOrDefault(emptyList())
+    if (!dataFile.exists()) {
+      loadStatus = LoadStatus.MISSING
+    } else {
+      val primary = runCatching { Item.parseList(dataFile.readText()) }.getOrNull()
+      if (primary != null) {
+        items = primary.items
+        skippedOnLoad = primary.skipped
+        loadStatus = LoadStatus.OK
+      } else {
+        // Plik uszkodzony: zachowujemy go do recznego odzyskania i probujemy ostatniej dobrej wersji.
+        runCatching { dataFile.renameTo(File(dataDir, "collection.json.corrupt-" + System.currentTimeMillis())) }
+        val restored = runCatching { Item.parseList(backupFile.readText()) }.getOrNull()
+        if (restored != null) {
+          items = restored.items
+          skippedOnLoad = restored.skipped
+          loadStatus = LoadStatus.RESTORED
+          runCatching { persistItems() }
+        } else {
+          items = emptyList()
+          loadStatus = LoadStatus.CORRUPT
+        }
+      }
+    }
     discogsToken = runCatching { JSONObject(settingsFile.readText()).optString("discogsToken", "") }.getOrDefault("")
   }
 
-  private fun writeAtomic(target: File, text: String) {
+  private fun writeAtomic(target: File, text: String, keepPrevious: File? = null) {
     val tmp = File(target.parentFile, target.name + ".tmp")
     tmp.writeText(text)
+    if (keepPrevious != null && target.exists()) runCatching { target.copyTo(keepPrevious, overwrite = true) }
     if (!tmp.renameTo(target)) {
       target.delete()
       check(tmp.renameTo(target)) { "Nie udało się zapisać pliku ${target.name}" }
     }
   }
 
-  private fun persistItems() = writeAtomic(dataFile, Item.listToJson(items))
+  private fun persistItems() = writeAtomic(dataFile, Item.listToJson(items), keepPrevious = backupFile)
 
   fun saveToken(token: String) {
     discogsToken = token.trim()
@@ -64,22 +103,30 @@ class Store(private val dataDir: File) {
 
   fun upsert(item: Item) {
     val idx = items.indexOfFirst { it.id == item.id }
-    items =
-      if (idx > -1) {
-        val old = items[idx].coverFile
-        if (old != null && old != item.coverFile) deleteCover(old)
-        items.toMutableList().also { it[idx] = item }
-      } else {
-        items + item
-      }
-    persistItems()
+    val old = if (idx > -1) items[idx].coverFile else null
+    val next = if (idx > -1) items.toMutableList().also { it[idx] = item } else items + item
+    persistNext(next)
+    // Starą okładkę usuwamy dopiero po udanym zapisie i tylko, gdy nie używa jej inna pozycja.
+    if (old != null && old != item.coverFile && next.none { it.coverFile == old }) deleteCover(old)
+  }
+
+  /** Zapisuje nowa liste; `items` zmienia sie dopiero po udanym zapisie. */
+  private fun persistNext(next: List<Item>) {
+    val prev = items
+    items = next
+    try {
+      persistItems()
+    } catch (e: Exception) {
+      items = prev
+      throw e
+    }
   }
 
   fun delete(id: String) {
     val item = items.firstOrNull { it.id == id } ?: return
-    deleteCover(item.coverFile)
-    items = items.filterNot { it.id == id }
-    persistItems()
+    val next = items.filterNot { it.id == id }
+    persistNext(next)
+    if (next.none { it.coverFile == item.coverFile }) deleteCover(item.coverFile)
   }
 
   // ---------- okladki ----------
@@ -95,17 +142,23 @@ class Store(private val dataDir: File) {
 
   // ---------- kopia zapasowa ----------
 
-  fun exportBackup(out: OutputStream) {
+  /**
+   * Zapisuje kopie zapasowa (ZIP). Token Discogs jest sekretem, wiec do pliku trafia tylko na wyrazne
+   * zadanie (`includeToken`); `settings.json` zawsze jest obecny, zeby format zgadzal sie z desktopem.
+   */
+  fun exportBackup(out: OutputStream, includeToken: Boolean = false) {
     val zip = ZipOutputStream(out)
     zip.putNextEntry(ZipEntry("collection.json"))
     zip.write(Item.listToJson(items).toByteArray(Charsets.UTF_8))
     zip.closeEntry()
     zip.putNextEntry(ZipEntry("settings.json"))
-    zip.write(JSONObject().put("discogsToken", discogsToken).toString(2).toByteArray(Charsets.UTF_8))
+    zip.write(JSONObject().put("discogsToken", if (includeToken) discogsToken else "").toString(2).toByteArray(Charsets.UTF_8))
     zip.closeEntry()
-    // Tylko okladki, do ktorych odwoluja sie pozycje (bez osieroconych plikow).
+    // Tylko okladki, do ktorych odwoluja sie pozycje (bez osieroconych plikow i bez duplikatow).
+    val written = mutableSetOf<String>()
     for (item in items) {
       val f = coverFileOf(item.coverFile) ?: continue
+      if (!written.add(f.name)) continue
       zip.putNextEntry(ZipEntry("covers/" + f.name))
       f.inputStream().use { it.copyTo(zip) }
       zip.closeEntry()
@@ -114,19 +167,35 @@ class Store(private val dataDir: File) {
     zip.flush()
   }
 
-  /** Zapisuje strumien do pliku tymczasowego, bo ZipFile wymaga swobodnego dostepu. */
-  fun spoolToTemp(input: InputStream, tmpDir: File): File {
+  /** Zapisuje strumien do pliku tymczasowego (z limitem rozmiaru), bo ZipFile wymaga swobodnego dostepu. */
+  fun spoolToTemp(input: InputStream, tmpDir: File, maxBytes: Long = MAX_BACKUP_BYTES): File {
     tmpDir.mkdirs()
     val tmp = File(tmpDir, "import-" + UUID.randomUUID() + ".zip")
-    tmp.outputStream().use { input.copyTo(it) }
+    try {
+      tmp.outputStream().use { out ->
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+          val n = input.read(buf)
+          if (n < 0) break
+          total += n
+          check(total <= maxBytes) { "Plik kopii jest zbyt duży." }
+          out.write(buf, 0, n)
+        }
+      }
+    } catch (e: Exception) {
+      tmp.delete()
+      throw e
+    }
     return tmp
   }
 
   private fun readIncoming(zip: ZipFile): List<Item> {
     val entry = zip.getEntry("collection.json") ?: error("To nie jest kopia zapasowa aplikacji Album (brak collection.json).")
+    check(entry.size in 0..MAX_COLLECTION_BYTES) { "Plik kolekcji w kopii jest zbyt duży." }
     val text = zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
     return try {
-      Item.listFromJson(text)
+      Item.parseList(text).items
     } catch (e: Exception) {
       error("Uszkodzony plik kopii zapasowej.")
     }
@@ -148,39 +217,70 @@ class Store(private val dataDir: File) {
     ZipFile(file).use { zip ->
       val incoming = readIncoming(zip)
 
+      /** Kopiuje okladke z ZIP-a tylko wtedy, gdy wpis jest rozsadnego rozmiaru i naprawde wyglada na obraz. */
       fun copyCover(name: String, to: File): Boolean {
         val e = zip.getEntry("covers/$name") ?: return false
-        zip.getInputStream(e).use { inp -> to.outputStream().use { inp.copyTo(it) } }
+        if (e.isDirectory || e.size !in 1..MAX_COVER_BYTES) return false
+        val bytes = zip.getInputStream(e).use { it.readBytes() }
+        if (!looksLikeImage(bytes)) return false
+        to.writeBytes(bytes)
         return true
       }
 
       val result =
         when (mode) {
           ImportMode.REPLACE -> {
-            // Najpierw rozpakowujemy do katalogu obok, zeby blad w polowie nie zniszczyl biezacej kolekcji.
+            // Rozpakowujemy do katalogu obok i podmieniamy dopiero po sukcesie (z mozliwoscia cofniecia),
+            // zeby blad w polowie nie zniszczyl biezacej kolekcji.
             val staging = File(dataDir, "covers.new")
+            val old = File(dataDir, "covers.old")
             staging.deleteRecursively()
+            old.deleteRecursively()
             staging.mkdirs()
             val names = incoming.mapNotNull { it.coverFile }.toSet()
-            for (n in names) copyCover(n, File(staging, n))
-            coversDir.deleteRecursively()
-            check(staging.renameTo(coversDir)) { "Nie udało się podmienić okładek." }
-            items = incoming
+            val kept = names.filter { n -> copyCover(n, File(staging, n)) }.toSet()
+            val prevItems = items
+            check(coversDir.renameTo(old)) { "Nie udało się podmienić okładek." }
+            try {
+              check(staging.renameTo(coversDir)) { "Nie udało się podmienić okładek." }
+              items = incoming.map { if (it.coverFile != null && it.coverFile !in kept) it.copy(coverFile = null) else it }
+              persistItems()
+            } catch (e: Exception) {
+              // Cofamy: stare okladki i stara lista pozycji.
+              coversDir.deleteRecursively()
+              old.renameTo(coversDir)
+              items = prevItems
+              throw e
+            }
+            old.deleteRecursively()
             ImportResult(incoming.size, 0, incoming.size)
           }
           ImportMode.MERGE -> {
             val known = items.map { it.id }.toMutableSet()
             val added = mutableListOf<Item>()
+            val copied = mutableListOf<File>()
             for (inc in incoming) {
               if (!known.add(inc.id)) continue
-              val keep = inc.coverFile?.takeIf { n -> copyCover(n, File(coversDir, n)) }
-              added += inc.copy(coverFile = keep)
+              val keep =
+                inc.coverFile?.takeIf { n ->
+                  val target = File(coversDir, n)
+                  // Nie nadpisujemy istniejacej okladki o tej samej nazwie.
+                  (!target.exists() && copyCover(n, target)).also { if (it) copied += target }
+                }
+              added += inc.copy(coverFile = keep ?: inc.coverFile?.takeIf { File(coversDir, it).exists() })
             }
+            val prevItems = items
             items = items + added
+            try {
+              persistItems()
+            } catch (e: Exception) {
+              items = prevItems
+              copied.forEach { it.delete() }
+              throw e
+            }
             ImportResult(added.size, incoming.size - added.size, items.size)
           }
         }
-      persistItems()
 
       // Jak w desktopie: token z kopii przejmujemy tylko wtedy, gdy nie mamy wlasnego.
       zip.getEntry("settings.json")?.let { e ->
@@ -191,4 +291,20 @@ class Store(private val dataDir: File) {
       }
       result
     }
+
+  companion object {
+    const val MAX_BACKUP_BYTES = 512L * 1024 * 1024
+    const val MAX_COLLECTION_BYTES = 64L * 1024 * 1024
+    const val MAX_COVER_BYTES = 20L * 1024 * 1024
+
+    /** Sygnatury JPEG, PNG, WebP, GIF i BMP - ZIP z obcego zrodla nie moze wstrzyknac innych plikow do okladek. */
+    fun looksLikeImage(b: ByteArray): Boolean {
+      fun at(i: Int, vararg v: Int) = b.size > i + v.size && v.indices.all { b[i + it] == v[it].toByte() }
+      return at(0, 0xFF, 0xD8, 0xFF) ||
+        at(0, 0x89, 0x50, 0x4E, 0x47) ||
+        at(0, 0x47, 0x49, 0x46, 0x38) ||
+        at(0, 0x42, 0x4D) ||
+        (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50))
+    }
+  }
 }

@@ -9,6 +9,11 @@ let currentSort = 'artist';
 let currentView = localStorage.getItem('albumView') || 'grid';
 let searchText = '';
 let editingItem = null; // pozycja edytowana w modalu (null = nowa)
+let editSnapshot = ''; // stan formularza przy otwarciu - do wykrywania niezapisanych zmian
+const editCovers = new Set(); // okładki wgrane w tej sesji edycji (do posprzątania po anulowaniu)
+let searchTimer = null;
+let searchSeq = 0;
+const collator = new Intl.Collator('pl', { sensitivity: 'accent' });
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,8 +31,21 @@ function openModal(id) { $(id).classList.remove('hidden'); }
 function closeModal(id) { $(id).classList.add('hidden'); }
 
 document.querySelectorAll('[data-close]').forEach((b) =>
-  b.addEventListener('click', () => closeModal(b.dataset.close))
+  b.addEventListener('click', () => {
+    if (b.dataset.close === 'editModal') requestCloseEdit();
+    else closeModal(b.dataset.close);
+  })
 );
+
+// Wyszukiwanie bez rozróżniania wielkości liter i polskich znaków (ł, ą, ę…).
+function norm(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
 
 function esc(s) {
   return String(s || '').replace(/[&<>"']/g, (c) =>
@@ -46,25 +64,24 @@ function guessFormat(formatText) {
 // ---------- lista ----------
 
 async function refresh() {
-  allItems = await window.api.listItems();
+  allItems = (await window.api.listItems()).map((i) => {
+    i._hay = norm([i.artist, i.title, i.label, i.genre, i.year, i.catalogNumber, i.barcode, i.notes].join(' '));
+    return i;
+  });
   render();
 }
 
 function render() {
-  const q = searchText.toLowerCase();
+  const words = norm(searchText).split(/\s+/).filter(Boolean);
   let list = allItems.filter((i) => {
     if (currentFormat !== 'all' && i.format !== currentFormat) return false;
-    if (!q) return true;
-    return [i.artist, i.title, i.label, i.genre, i.year, i.catalogNumber, i.barcode]
-      .join(' ').toLowerCase().includes(q);
+    return words.every((w) => i._hay.includes(w));
   });
 
   list.sort((a, b) => {
     if (currentSort === 'addedAt') return (b.addedAt || '').localeCompare(a.addedAt || '');
     if (currentSort === 'year') return (a.year || '9999').localeCompare(b.year || '9999');
-    const ka = (a[currentSort] || '').toLowerCase();
-    const kb = (b[currentSort] || '').toLowerCase();
-    return ka.localeCompare(kb, 'pl');
+    return collator.compare(a[currentSort] || '', b[currentSort] || '');
   });
 
   const counts = { vinyl: 0, cd: 0, cassette: 0 };
@@ -76,6 +93,7 @@ function render() {
   grid.innerHTML = '';
   grid.className = currentView === 'list' ? 'list' : 'grid';
   $('emptyState').classList.toggle('hidden', allItems.length > 0);
+  const frag = document.createDocumentFragment();
 
   for (const item of list) {
     const el = document.createElement('div');
@@ -83,7 +101,7 @@ function render() {
       el.className = 'row';
       el.innerHTML =
         '<div class="row-cover">' +
-        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" />' : FORMAT_ICON[item.format] || '🎵') +
+        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || '🎵') +
         '</div>' +
         '<div class="row-main"><div class="row-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
         '<div class="row-title">' + esc(item.title || '(bez tytułu)') + '</div></div>' +
@@ -95,7 +113,7 @@ function render() {
       el.className = 'card';
       el.innerHTML =
         '<div class="card-cover">' +
-        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" />' : FORMAT_ICON[item.format] || '🎵') +
+        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || '🎵') +
         '</div>' +
         '<div class="card-info">' +
         '<div class="card-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
@@ -107,6 +125,7 @@ function render() {
     const del = document.createElement('button');
     del.className = 'del-btn';
     del.title = 'Usuń z kolekcji';
+    del.setAttribute('aria-label', 'Usuń z kolekcji');
     del.textContent = '🗑';
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -116,9 +135,18 @@ function render() {
       toast('Usunięto z kolekcji.');
     });
     el.appendChild(del);
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
     el.addEventListener('click', () => openEdit(item));
-    grid.appendChild(el);
+    el.addEventListener('keydown', (e) => {
+      if (e.target === el && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        openEdit(item);
+      }
+    });
+    frag.appendChild(el);
   }
+  grid.appendChild(frag);
 }
 
 // ---------- modal edycji ----------
@@ -143,7 +171,38 @@ function fillForm(data) {
   $('fNotes').value = data.notes || '';
 }
 
+function formState() {
+  return JSON.stringify([
+    $('fFormat').value, $('fArtist').value, $('fTitle').value, $('fYear').value, $('fLabel').value,
+    $('fCatalog').value, $('fBarcode').value, $('fGenre').value, $('fCountry').value, $('fCondition').value,
+    $('fTracks').value, $('fNotes').value,
+    (editingItem && editingItem.coverFile) || '', (editingItem && editingItem.newCoverUrl) || ''
+  ]);
+}
+
+function isDirty() {
+  return !$('editModal').classList.contains('hidden') && formState() !== editSnapshot;
+}
+
+/** Zamyka okno edycji i sprząta okładki wgrane w tej sesji, których nie zapisano przy pozycji. */
+function finishEdit(savedCoverFile) {
+  const names = [...editCovers].filter((n) => n !== savedCoverFile);
+  editCovers.clear();
+  trackFetchSeq++; // unieważnia trwające pobieranie listy utworów
+  if (names.length) window.api.discardCovers(names);
+  closeModal('editModal');
+}
+
+function requestCloseEdit() {
+  if ($('editModal').classList.contains('hidden')) return;
+  if (isDirty() && !confirm('Masz niezapisane zmiany. Zamknąć bez zapisywania?')) return;
+  finishEdit(null);
+}
+
 function openEdit(item, prefill) {
+  // Nowe okno edycji nie może odziedziczyć okładek/pobierania z poprzedniego.
+  if (!$('editModal').classList.contains('hidden')) finishEdit(null);
+  trackFetchSeq++;
   editingItem = item ? Object.assign({}, item) : {
     id: null, format: 'vinyl', coverFile: null, coverUrl: null, newCoverUrl: null
   };
@@ -156,6 +215,8 @@ function openEdit(item, prefill) {
   $('onlineErrors').classList.add('hidden');
   $('onlineInfo').classList.add('hidden');
   $('onlineQuery').value = '';
+  // Wstępnie wypełniona (zeskanowana) pozycja liczy się jako niezapisana.
+  editSnapshot = prefill ? '' : formState();
   openModal('editModal');
   $('fArtist').focus();
 }
@@ -189,12 +250,25 @@ function applyResult(r, intoNewItem) {
     const seq = ++trackFetchSeq;
     const ta = $('fTracks');
     const prevPlaceholder = ta.placeholder;
+    const startValue = ta.value;
     ta.placeholder = '⏳ Pobieram listę utworów…';
-    window.api.fetchTracks({ source: r.source, sourceId: r.sourceId }).then((txt) => {
-      if (seq !== trackFetchSeq) return;
-      ta.placeholder = prevPlaceholder;
-      if (txt) ta.value = txt;
-    });
+    window.api
+      .fetchTracks({ source: r.source, sourceId: r.sourceId })
+      .then((res) => {
+        if (seq !== trackFetchSeq) return; // okno zamknięto lub wybrano inny wynik
+        ta.placeholder = prevPlaceholder;
+        if (res && res.error) toast('Nie udało się pobrać listy utworów: ' + res.error, 6000);
+        else if (res && res.text) {
+          if (ta.value !== startValue && ta.value.trim()) toast('Lista utworów pobrana, ale pole było edytowane — nie nadpisano.', 5000);
+          else ta.value = res.text;
+        }
+      })
+      .catch((e) => {
+        if (seq === trackFetchSeq) {
+          ta.placeholder = prevPlaceholder;
+          toast('Nie udało się pobrać listy utworów: ' + e.message, 6000);
+        }
+      });
   }
 }
 
@@ -213,7 +287,7 @@ function renderOnlineResults(results, errors, counts) {
   if (/token/i.test(errText)) {
     const b = document.createElement('button');
     b.className = 'btn btn-small';
-    b.style.marginLeft = '8px';
+    b.classList.add('btn-inline');
     b.textContent = 'Otwórz Ustawienia';
     b.addEventListener('click', openSettings);
     errBox.appendChild(b);
@@ -232,12 +306,19 @@ function renderOnlineResults(results, errors, counts) {
     const row = document.createElement('div');
     row.className = 'online-result';
     row.innerHTML =
-      (r.coverUrl
-        ? '<img src="' + esc(r.coverUrl) + '" onerror="this.outerHTML=\'<div class=noimg>♪</div>\'" />'
-        : '<div class="noimg">♪</div>') +
+      (r.coverUrl ? '<img src="' + esc(r.coverUrl) + '" alt="" />' : '<div class="noimg">♪</div>') +
       '<div class="or-main"><div class="or-title">' + esc(r.artist ? r.artist + ' — ' + r.title : r.title) + '</div>' +
       '<div class="or-sub">' + esc([r.year, r.formatText, r.label, r.country].filter(Boolean).join(' · ')) + '</div></div>' +
       '<span class="or-source">' + esc(r.source) + '</span>';
+    const thumb = row.querySelector('img');
+    if (thumb) {
+      thumb.addEventListener('error', () => {
+        const ph = document.createElement('div');
+        ph.className = 'noimg';
+        ph.textContent = '♪';
+        thumb.replaceWith(ph);
+      });
+    }
     row.addEventListener('click', () => {
       applyResult(r, false);
       box.classList.add('hidden');
@@ -251,12 +332,13 @@ async function onlineSearch() {
   const q = $('onlineQuery').value.trim();
   if (!q) return;
   const btn = $('btnOnlineSearch');
+  const seq = ++searchSeq;
   btn.disabled = true;
   btn.textContent = 'Szukam…';
   try {
     const isBarcode = /^[0-9\s-]{7,16}$/.test(q);
     const res = await window.api.searchRemote(isBarcode ? { barcode: q.replace(/\D/g, '') } : { query: q });
-    renderOnlineResults(res.results, res.errors, res.counts);
+    if (seq === searchSeq && !$('editModal').classList.contains('hidden')) renderOnlineResults(res.results, res.errors, res.counts);
   } catch (e) {
     toast('Błąd wyszukiwania: ' + e.message);
   } finally {
@@ -291,10 +373,11 @@ async function saveEdit() {
   btn.disabled = true;
   btn.textContent = 'Zapisuję…';
   try {
-    await window.api.saveItem(item);
-    closeModal('editModal');
+    const saved = await window.api.saveItem(item);
+    finishEdit(saved.coverFile);
     await refresh();
-    toast(item.id ? 'Zapisano zmiany.' : 'Dodano do kolekcji: ' + (item.artist || item.title));
+    if (saved.coverFailed) toast('Zapisano, ale nie udało się pobrać okładki (sprawdź połączenie lub wybierz plik ręcznie).', 7000);
+    else toast(item.id ? 'Zapisano zmiany.' : 'Dodano do kolekcji: ' + (item.artist || item.title));
   } catch (e) {
     toast('Błąd zapisu: ' + e.message);
   } finally {
@@ -319,6 +402,7 @@ async function openPhone() {
   $('phoneAlt').textContent = (info.altUrls && info.altUrls.length)
     ? 'Adresy zapasowe (gdy główny nie działa): ' + info.altUrls.join('  ·  ')
     : '';
+  $('phoneIdle').textContent = info.idleMinutes || 15;
   if (!info.serverOk) phoneLog('Uwaga: serwer nie wystartował (port zajęty?). Uruchom aplikację ponownie.');
   openModal('phoneModal');
 }
@@ -327,7 +411,13 @@ window.api.onPhoneEvent((data) => {
   if (data.type === 'barcode') {
     phoneLog('Odebrano kod ' + data.barcode + ' — znaleziono wyników: ' + data.results.length);
     closeModal('phoneModal');
-    if (data.results.length) {
+    if (!$('editModal').classList.contains('hidden')) {
+      // Użytkownik właśnie edytuje pozycję - nie nadpisujemy formularza. Wyniki pokazujemy na liście do wyboru.
+      $('onlineQuery').value = data.barcode;
+      if (!$('fBarcode').value) $('fBarcode').value = data.barcode;
+      renderOnlineResults(data.results, data.errors, data.counts);
+      toast('Zeskanowano kod ' + data.barcode + '. Formularz zostawiono bez zmian — wybierz wynik z listy, jeśli pasuje.', 6000);
+    } else if (data.results.length) {
       openEdit(null, Object.assign({}, data.results[0], { barcode: data.results[0].barcode || data.barcode }));
       renderOnlineResults(data.results, data.errors, data.counts);
       toast('Zeskanowano kod ' + data.barcode + '. Wybierz właściwe wydanie z listy lub zapisz.');
@@ -342,8 +432,11 @@ window.api.onPhoneEvent((data) => {
     if (!modalOpen) openEdit(null);
     editingItem.coverFile = data.coverFile;
     editingItem.newCoverUrl = null;
+    editCovers.add(data.coverFile);
     setCoverPreview(data.coverUrl);
     toast('Otrzymano zdjęcie okładki z telefonu.');
+  } else if (data.type === 'stopped') {
+    phoneLog('Połączenie z telefonem zakończone (' + data.reason + ').');
   }
 });
 
@@ -403,6 +496,7 @@ $('btnPickCover').addEventListener('click', async () => {
   if (r) {
     editingItem.coverFile = r.coverFile;
     editingItem.newCoverUrl = null;
+    editCovers.add(r.coverFile);
     setCoverPreview(r.coverUrl);
   }
 });
@@ -411,6 +505,12 @@ $('btnClearCover').addEventListener('click', () => {
   editingItem.coverFile = null;
   editingItem.newCoverUrl = null;
   setCoverPreview(null);
+});
+
+$('btnPhoneStop').addEventListener('click', async () => {
+  await window.api.phoneStop();
+  closeModal('phoneModal');
+  toast('Połączenie z telefonem zakończone.');
 });
 
 $('btnDiscogsPage').addEventListener('click', () => window.api.openDiscogsTokenPage());
@@ -436,7 +536,7 @@ $('btnSaveSettings').addEventListener('click', async () => {
 
 $('btnExport').addEventListener('click', async () => {
   const r = await window.api.exportBackup();
-  if (r.ok) toast('Utworzono kopię zapasową (' + r.count + ' pozycji): ' + r.path, 6000);
+  if (r.ok) toast('Utworzono kopię zapasową (' + r.count + ' pozycji' + (r.tokenIncluded ? ', z tokenem Discogs' : '') + '): ' + r.path, 6000);
   else if (!r.canceled) toast('Błąd kopii zapasowej: ' + r.message);
 });
 
@@ -469,7 +569,11 @@ document.querySelectorAll('#viewToggle .chip').forEach((btn) => {
   });
 });
 
-$('searchInput').addEventListener('input', (e) => { searchText = e.target.value; render(); });
+$('searchInput').addEventListener('input', (e) => {
+  searchText = e.target.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(render, 120);
+});
 $('sortSelect').addEventListener('change', (e) => { currentSort = e.target.value; render(); });
 
 document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
@@ -483,7 +587,10 @@ document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    ['editModal', 'phoneModal', 'settingsModal'].forEach(closeModal);
+    // Zamykamy tylko wierzchnie okno; edycja z niezapisanymi zmianami pyta o potwierdzenie.
+    if (!$('settingsModal').classList.contains('hidden')) closeModal('settingsModal');
+    else if (!$('phoneModal').classList.contains('hidden')) closeModal('phoneModal');
+    else requestCloseEdit();
   }
 });
 

@@ -1,17 +1,22 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeImage, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const dgram = require('dgram');
-const express = require('express');
 const XLSX = require('xlsx');
-const multer = require('multer');
-const AdmZip = require('adm-zip');
 const QRCode = require('qrcode');
 
+const { saveJsonAtomic, loadJsonRecovering, safeBaseName, coverPath, sanitizeItem, sanitizeItems } = require('./lib/storage');
+const { readBackup, applyBackup, writeBackup } = require('./lib/backup');
+const { createLookup } = require('./lib/lookup');
+const { createPhoneApp } = require('./lib/phoneServer');
+const { sniffImage } = require('./lib/image');
+
 const PHONE_PORT = 8137;
+const PHONE_IDLE_MS = 15 * 60 * 1000;
+const PHONE_COVER_MAX_DIM = 2000;
 const APP_UA = 'AlbumApp/1.0 (kolekcja muzyczna; https://github.com/zetmar-collab/album)';
 
 let mainWindow = null;
@@ -22,6 +27,13 @@ let settingsFile = '';
 
 let items = [];
 let settings = { discogsToken: '' };
+let loadReport = { status: 'ok', corruptPath: null, skipped: 0 };
+
+// Okładki wgrane w tej sesji edycji (z dysku lub z telefonu), jeszcze nie zapisane przy pozycji.
+// Tylko takie pliki wolno usunąć po anulowaniu edycji.
+const sessionCovers = new Set();
+
+const lookup = createLookup({ getToken: () => settings.discogsToken, userAgent: APP_UA });
 
 // ---------- pliki danych ----------
 
@@ -33,31 +45,66 @@ function initPaths() {
   settingsFile = path.join(dataDir, 'settings.json');
 }
 
-function loadJson(file, fallback) {
+/** Szyfrowanie tokenu systemowym magazynem (DPAPI/Keychain/libsecret); na Linuksie bez keyringu zostaje zwykły tekst. */
+function encryptionUsable() {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    if (process.platform === 'linux' && typeof safeStorage.getSelectedStorageBackend === 'function') {
+      return safeStorage.getSelectedStorageBackend() !== 'basic_text';
+    }
+    return true;
   } catch {
-    return fallback;
+    return false;
   }
 }
 
-function saveJson(file, obj) {
-  fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
+function loadSettings() {
+  const r = loadJsonRecovering(settingsFile, {}, (v) => v && typeof v === 'object' && !Array.isArray(v));
+  const o = r.value;
+  let token = '';
+  if (typeof o.discogsTokenEnc === 'string') {
+    try {
+      token = safeStorage.decryptString(Buffer.from(o.discogsTokenEnc, 'base64'));
+    } catch {
+      token = '';
+    }
+  } else if (typeof o.discogsToken === 'string') {
+    token = o.discogsToken;
+  }
+  settings = { discogsToken: token.trim() };
+}
+
+function saveSettings() {
+  const out = {};
+  if (settings.discogsToken) {
+    if (encryptionUsable()) {
+      try {
+        out.discogsTokenEnc = safeStorage.encryptString(settings.discogsToken).toString('base64');
+      } catch {
+        out.discogsToken = settings.discogsToken;
+      }
+    } else {
+      out.discogsToken = settings.discogsToken;
+    }
+  }
+  saveJsonAtomic(settingsFile, out);
 }
 
 function loadAll() {
-  items = loadJson(dataFile, []);
-  settings = Object.assign({ discogsToken: '' }, loadJson(settingsFile, {}));
+  const r = loadJsonRecovering(dataFile, [], Array.isArray);
+  const clean = sanitizeItems(r.value);
+  items = clean.items;
+  loadReport = { status: r.status, corruptPath: r.corruptPath, skipped: clean.skipped };
+  loadSettings();
 }
 
 function saveItems() {
-  saveJson(dataFile, items);
+  saveJsonAtomic(dataFile, items);
 }
 
 function coverUrlFor(item) {
-  if (!item.coverFile) return null;
-  const p = path.join(coversDir, item.coverFile);
-  if (!fs.existsSync(p)) return null;
+  const p = coverPath(coversDir, item.coverFile);
+  if (!p || !fs.existsSync(p)) return null;
   return pathToFileURL(p).href;
 }
 
@@ -65,190 +112,43 @@ function itemForRenderer(item) {
   return Object.assign({}, item, { coverUrl: coverUrlFor(item) });
 }
 
-// ---------- wyszukiwanie w bazach ----------
-
-async function searchMusicBrainz(query) {
-  const url = 'https://musicbrainz.org/ws/2/release/?query=' + encodeURIComponent(query) + '&fmt=json&limit=8';
-  const res = await fetch(url, { headers: { 'User-Agent': APP_UA, Accept: 'application/json' } });
-  if (!res.ok) throw new Error('MusicBrainz: HTTP ' + res.status);
-  const data = await res.json();
-  return (data.releases || []).map((r) => {
-    const li = (r['label-info'] || [])[0] || {};
-    return {
-      source: 'MusicBrainz',
-      sourceId: r.id,
-      artist: (r['artist-credit'] || []).map((a) => (a.name || '') + (a.joinphrase || '')).join(''),
-      title: r.title || '',
-      year: (r.date || '').slice(0, 4),
-      label: (li.label && li.label.name) || '',
-      catalogNumber: li['catalog-number'] || '',
-      country: r.country || '',
-      formatText: (r.media && r.media[0] && r.media[0].format) || '',
-      barcode: r.barcode || '',
-      coverUrl: 'https://coverartarchive.org/release/' + r.id + '/front-500'
-    };
-  });
+function deleteCoverFile(name) {
+  const p = coverPath(coversDir, name);
+  if (!p) return;
+  try {
+    fs.unlinkSync(p);
+  } catch {
+    /* plik mógł już nie istnieć */
+  }
 }
 
-async function searchDiscogs(params) {
-  const token = (settings.discogsToken || '').trim();
-  if (!token) {
-    return { error: 'Brak tokenu Discogs — dodaj go w Ustawieniach, aby przeszukiwać Discogs.', results: [] };
+/** Informuje o problemach z plikiem danych po starcie, żeby nic nie znikało po cichu. */
+function reportLoadProblems() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const { status, corruptPath, skipped } = loadReport;
+  const lines = [];
+  let type = 'warning';
+  if (status === 'corrupt') {
+    lines.push('Plik kolekcji był uszkodzony i nie udało się go odzyskać. Aplikacja wystartowała z pustą kolekcją.');
+    lines.push('Możesz przywrócić dane z kopii zapasowej (Ustawienia → Przywróć z kopii).');
+    type = 'error';
+  } else if (status === 'restored') {
+    lines.push('Plik kolekcji był uszkodzony — przywrócono ostatnią poprawną wersję (plik .bak).');
   }
-  const qs = new URLSearchParams(Object.assign({}, params, { type: 'release', per_page: '8', token }));
-  const res = await fetch('https://api.discogs.com/database/search?' + qs.toString(), {
-    headers: { 'User-Agent': APP_UA }
-  });
-  if (res.status === 401) return { error: 'Discogs: nieprawidłowy token (sprawdź Ustawienia).', results: [] };
-  if (!res.ok) return { error: 'Discogs: HTTP ' + res.status, results: [] };
-  const data = await res.json();
-  const results = (data.results || []).map((r) => {
-    const t = r.title || '';
-    const sep = t.indexOf(' - ');
-    return {
-      source: 'Discogs',
-      sourceId: String(r.id),
-      artist: sep > -1 ? t.slice(0, sep) : '',
-      title: sep > -1 ? t.slice(sep + 3) : t,
-      year: r.year ? String(r.year) : '',
-      label: (r.label && r.label[0]) || '',
-      catalogNumber: r.catno && r.catno !== 'none' ? r.catno : '',
-      country: r.country || '',
-      formatText: (r.format || []).join(', '),
-      barcode: (r.barcode && r.barcode[0]) || '',
-      genre: (r.genre || []).join(', '),
-      coverUrl: r.cover_image || r.thumb || ''
-    };
-  });
-  return { error: null, results };
+  if (corruptPath) lines.push('Uszkodzony plik zachowano jako:\n' + corruptPath);
+  if (skipped > 0) lines.push('Pominięto ' + skipped + ' nieprawidłowych pozycji w pliku kolekcji.');
+  if (!lines.length) return;
+  dialog.showMessageBox(mainWindow, { type, title: 'Album — dane kolekcji', message: 'Problem z plikiem kolekcji', detail: lines.join('\n\n'), buttons: ['OK'] });
 }
 
-// Ten sam kod kreskowy bywa zapisany w bazach z zerem wiodącym lub bez
-// (UPC-A 12 cyfr vs EAN-13 z zerem) — szukamy wszystkich wariantów.
-function barcodeVariants(barcode) {
-  const b = String(barcode).replace(/\D/g, '');
-  const set = new Set();
-  if (b) set.add(b);
-  const noZeros = b.replace(/^0+/, '');
-  if (noZeros) set.add(noZeros);
-  if (b.length === 12) set.add('0' + b);
-  return [...set];
-}
-
-async function searchDiscogsBarcode(variants) {
-  let error = null;
-  for (const v of variants) {
-    const r = await searchDiscogs({ barcode: v });
-    if (r.error) return r;
-    if (r.results.length) return r;
-  }
-  // Discogs czesto przechowuje kody ze spacjami (np. "7 24384 26095 8") i wtedy
-  // parametr barcode nie trafia — fallback na wyszukiwanie pelnotekstowe.
-  for (const v of variants) {
-    const r = await searchDiscogs({ q: v });
-    if (r.error) { error = r.error; break; }
-    if (r.results.length) return r;
-  }
-  return { error, results: [] };
-}
-
-async function verifyDiscogsToken(token) {
-  if (!token) return { ok: true, empty: true };
-  const res = await fetch('https://api.discogs.com/oauth/identity', {
-    headers: { 'User-Agent': APP_UA, Authorization: 'Discogs token=' + token }
-  });
-  if (res.ok) {
-    const d = await res.json();
-    return { ok: true, username: d.username };
-  }
-  if (res.status === 401) return { ok: false, message: 'Discogs odrzucił ten token. Skopiuj token ponownie z discogs.com → Settings → Developers.' };
-  return { ok: false, message: 'Nie udało się sprawdzić tokenu (Discogs: HTTP ' + res.status + ').' };
-}
-
-// Wspólne wyszukiwanie: po kodzie kreskowym albo po tekście.
-async function searchRemote({ barcode, query }) {
-  const tasks = [];
-  if (barcode) {
-    const variants = barcodeVariants(barcode);
-    tasks.push(searchMusicBrainz(variants.map((v) => 'barcode:' + JSON.stringify(v)).join(' OR ')));
-    tasks.push(searchDiscogsBarcode(variants));
-  } else {
-    tasks.push(searchMusicBrainz(String(query || '')));
-    tasks.push(searchDiscogs({ q: String(query || '') }));
-  }
-  const [mb, dc] = await Promise.allSettled(tasks);
-  const out = { results: [], errors: [], counts: { musicbrainz: 0, discogs: 0 } };
-  let mbResults = [];
-  let dcResults = [];
-  if (mb.status === 'fulfilled') mbResults = mb.value;
-  else out.errors.push('MusicBrainz: ' + mb.reason.message);
-  if (dc.status === 'fulfilled') {
-    dcResults = dc.value.results;
-    if (dc.value.error) out.errors.push(dc.value.error);
-  } else {
-    out.errors.push('Discogs: ' + dc.reason.message);
-  }
-  out.counts.musicbrainz = mbResults.length;
-  out.counts.discogs = dcResults.length;
-  // Przeplot wyników, żeby oba serwisy były widoczne od razu na górze listy.
-  const n = Math.max(mbResults.length, dcResults.length);
-  for (let i = 0; i < n; i++) {
-    if (dcResults[i]) out.results.push(dcResults[i]);
-    if (mbResults[i]) out.results.push(mbResults[i]);
-  }
-  return out;
-}
-
-function msToMinSec(ms) {
-  if (!ms) return '';
-  const s = Math.round(ms / 1000);
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-}
-
-// Lista utworów jako tekst, po jednym utworze w wierszu: "1. Tytuł (3:45)".
-async function fetchTracklist(source, sourceId) {
-  if (source === 'MusicBrainz') {
-    const res = await fetch('https://musicbrainz.org/ws/2/release/' + encodeURIComponent(sourceId) + '?inc=recordings&fmt=json', {
-      headers: { 'User-Agent': APP_UA, Accept: 'application/json' }
-    });
-    if (!res.ok) return '';
-    const data = await res.json();
-    const media = data.media || [];
-    const multi = media.length > 1;
-    const lines = [];
-    for (const m of media) {
-      for (const t of m.tracks || []) {
-        const title = t.title || (t.recording && t.recording.title) || '';
-        const dur = msToMinSec(t.length || (t.recording && t.recording.length));
-        lines.push((multi ? m.position + '-' : '') + t.position + '. ' + title + (dur ? ' (' + dur + ')' : ''));
-      }
-    }
-    return lines.join('\n');
-  }
-  if (source === 'Discogs') {
-    const token = (settings.discogsToken || '').trim();
-    if (!token) return '';
-    const res = await fetch('https://api.discogs.com/releases/' + encodeURIComponent(sourceId) + '?token=' + encodeURIComponent(token), {
-      headers: { 'User-Agent': APP_UA }
-    });
-    if (!res.ok) return '';
-    const data = await res.json();
-    return (data.tracklist || [])
-      .filter((t) => t.type_ !== 'heading')
-      .map((t) => (t.position ? t.position + '. ' : '') + (t.title || '') + (t.duration ? ' (' + t.duration + ')' : ''))
-      .join('\n');
-  }
-  return '';
-}
+// ---------- okładki ----------
 
 async function downloadCover(url) {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': APP_UA }, redirect: 'follow' });
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 100) return null;
-    const ct = res.headers.get('content-type') || '';
-    const ext = ct.includes('png') ? '.png' : '.jpg';
+    const buf = await lookup.downloadImage(url);
+    if (!buf) return null;
+    const ext = sniffImage(buf);
+    if (!ext) return null;
     const name = crypto.randomUUID() + ext;
     fs.writeFileSync(path.join(coversDir, name), buf);
     return name;
@@ -257,11 +157,33 @@ async function downloadCover(url) {
   }
 }
 
-function deleteCoverFile(name) {
-  if (!name) return;
+/**
+ * Okładka z telefonu: obraz jest weryfikowany po sygnaturze, a zbyt duży zmniejszany
+ * (telefon zwykle zmniejsza już sam, to tylko zabezpieczenie). Zwraca { coverFile, coverUrl } albo null.
+ */
+function storePhoneCover(buf) {
+  const ext = sniffImage(buf);
+  if (!ext) return null;
+  let out = buf;
+  let outExt = ext;
   try {
-    fs.unlinkSync(path.join(coversDir, name));
-  } catch {}
+    const img = nativeImage.createFromBuffer(buf);
+    if (img.isEmpty()) return null;
+    const { width, height } = img.getSize();
+    if (Math.max(width, height) > PHONE_COVER_MAX_DIM) {
+      const scaled =
+        width >= height ? img.resize({ width: PHONE_COVER_MAX_DIM, quality: 'good' }) : img.resize({ height: PHONE_COVER_MAX_DIM, quality: 'good' });
+      out = scaled.toJPEG(88);
+      outExt = '.jpg';
+    }
+  } catch {
+    return null;
+  }
+  const name = crypto.randomUUID() + outExt;
+  const full = path.join(coversDir, name);
+  fs.writeFileSync(full, out);
+  sessionCovers.add(name);
+  return { coverFile: name, coverUrl: pathToFileURL(full).href };
 }
 
 // ---------- odczyt kodu kreskowego ze zdjęcia ----------
@@ -279,7 +201,9 @@ function resolveWasmPath() {
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
-    } catch {}
+    } catch {
+      /* próbujemy kolejną ścieżkę */
+    }
   }
   return null;
 }
@@ -306,9 +230,11 @@ async function decodeBarcodesFromImage(buffer) {
   return results.map((r) => r.text).filter((t) => t && /^[0-9]{7,14}$/.test(t.replace(/\s/g, '')));
 }
 
-// ---------- serwer dla telefonu ----------
+// ---------- serwer dla telefonu (uruchamiany na żądanie, z tokenem sesji) ----------
 
 let phoneServer = null;
+let phoneToken = '';
+let phoneIdleTimer = null;
 
 // Wszystkie sensowne adresy IPv4 (bez link-local 169.254.x i pętli zwrotnej).
 function getAllLanIps() {
@@ -327,14 +253,34 @@ function getAllLanIps() {
 function detectRouteIp() {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const finish = (v) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+      }
+    };
     try {
       const s = dgram.createSocket('udp4');
-      s.on('error', () => { try { s.close(); } catch {} finish(null); });
+      s.on('error', () => {
+        try {
+          s.close();
+        } catch {
+          /* gniazdo już zamknięte */
+        }
+        finish(null);
+      });
       s.connect(53, '8.8.8.8', () => {
         let addr = null;
-        try { addr = s.address().address; } catch {}
-        try { s.close(); } catch {}
+        try {
+          addr = s.address().address;
+        } catch {
+          /* brak adresu */
+        }
+        try {
+          s.close();
+        } catch {
+          /* gniazdo już zamknięte */
+        }
         finish(addr);
       });
       setTimeout(() => finish(null), 1500);
@@ -358,56 +304,61 @@ function sendToRenderer(channel, payload) {
 }
 
 async function handleIncomingBarcode(barcode) {
-  const lookup = await searchRemote({ barcode });
-  sendToRenderer('phone-event', { type: 'barcode', barcode, results: lookup.results, errors: lookup.errors, counts: lookup.counts });
-  return lookup;
+  const result = await lookup.searchRemote({ barcode });
+  sendToRenderer('phone-event', { type: 'barcode', barcode, results: result.results, errors: result.errors, counts: result.counts });
+  return result;
+}
+
+function touchPhone() {
+  if (phoneIdleTimer) clearTimeout(phoneIdleTimer);
+  phoneIdleTimer = setTimeout(() => stopPhoneServer('bezczynność'), PHONE_IDLE_MS);
+}
+
+function stopPhoneServer(reason) {
+  if (phoneIdleTimer) {
+    clearTimeout(phoneIdleTimer);
+    phoneIdleTimer = null;
+  }
+  if (!phoneServer) return;
+  const srv = phoneServer;
+  phoneServer = null;
+  phoneToken = '';
+  try {
+    srv.close();
+    if (typeof srv.closeAllConnections === 'function') srv.closeAllConnections();
+  } catch {
+    /* serwer już zatrzymany */
+  }
+  if (reason) sendToRenderer('phone-event', { type: 'stopped', reason });
 }
 
 function startPhoneServer() {
-  const srv = express();
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-  srv.get('/', (req, res) => res.sendFile(path.join(__dirname, 'phone', 'phone.html')));
-
-  srv.post('/api/barcode', express.json(), async (req, res) => {
-    const barcode = String((req.body && req.body.barcode) || '').replace(/\D/g, '');
-    if (barcode.length < 7) return res.json({ ok: false, message: 'Nieprawidłowy kod (za krótki).' });
-    try {
-      const lookup = await handleIncomingBarcode(barcode);
-      res.json({ ok: true, barcode, found: lookup.results.length });
-    } catch (e) {
-      res.json({ ok: false, message: 'Błąd wyszukiwania: ' + e.message });
-    }
-  });
-
-  srv.post('/api/photo', upload.single('photo'), async (req, res) => {
-    if (!req.file) return res.json({ ok: false, message: 'Brak zdjęcia.' });
-    try {
-      const codes = await decodeBarcodesFromImage(req.file.buffer);
-      if (!codes.length) {
-        return res.json({ ok: false, message: 'Nie wykryto kodu kreskowego. Zrób zdjęcie bliżej, przy dobrym świetle.' });
-      }
-      const barcode = codes[0].replace(/\s/g, '');
-      const lookup = await handleIncomingBarcode(barcode);
-      res.json({ ok: true, barcode, found: lookup.results.length });
-    } catch (e) {
-      res.json({ ok: false, message: 'Błąd odczytu zdjęcia: ' + e.message });
-    }
-  });
-
-  srv.post('/api/cover', upload.single('photo'), (req, res) => {
-    if (!req.file) return res.json({ ok: false, message: 'Brak zdjęcia.' });
-    const ext = (req.file.mimetype || '').includes('png') ? '.png' : '.jpg';
-    const name = crypto.randomUUID() + ext;
-    fs.writeFileSync(path.join(coversDir, name), req.file.buffer);
-    sendToRenderer('phone-event', { type: 'cover', coverFile: name, coverUrl: pathToFileURL(path.join(coversDir, name)).href });
-    res.json({ ok: true });
-  });
-
-  phoneServer = srv.listen(PHONE_PORT, '0.0.0.0');
-  phoneServer.on('error', (e) => {
-    console.error('Serwer telefonu nie wystartował:', e.message);
-    phoneServer = null;
+  if (phoneServer) {
+    touchPhone();
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const token = crypto.randomBytes(16).toString('hex');
+    const expressApp = createPhoneApp({
+      token,
+      pageFile: path.join(__dirname, 'phone', 'phone.html'),
+      onBarcode: handleIncomingBarcode,
+      onCover: (saved) => sendToRenderer('phone-event', { type: 'cover', coverFile: saved.coverFile, coverUrl: saved.coverUrl }),
+      decodeBarcodes: decodeBarcodesFromImage,
+      processCover: async (buf) => storePhoneCover(buf),
+      onActivity: touchPhone
+    });
+    const srv = expressApp.listen(PHONE_PORT, '0.0.0.0');
+    srv.once('listening', () => {
+      phoneServer = srv;
+      phoneToken = token;
+      touchPhone();
+      resolve(true);
+    });
+    srv.once('error', (e) => {
+      console.error('Serwer telefonu nie wystartował:', e.message);
+      resolve(false);
+    });
   });
 }
 
@@ -416,60 +367,63 @@ function startPhoneServer() {
 function setupIpc() {
   ipcMain.handle('items:list', () => items.map(itemForRenderer));
 
-  ipcMain.handle('items:save', async (ev, item) => {
-    const clean = {
-      id: item.id || crypto.randomUUID(),
-      format: ['vinyl', 'cd', 'cassette'].includes(item.format) ? item.format : 'vinyl',
-      artist: String(item.artist || '').trim(),
-      title: String(item.title || '').trim(),
-      year: String(item.year || '').trim(),
-      label: String(item.label || '').trim(),
-      catalogNumber: String(item.catalogNumber || '').trim(),
-      barcode: String(item.barcode || '').trim(),
-      genre: String(item.genre || '').trim(),
-      country: String(item.country || '').trim(),
-      condition: String(item.condition || '').trim(),
-      tracklist: String(item.tracklist || '').trim(),
-      notes: String(item.notes || '').trim(),
-      coverFile: item.coverFile || null,
-      source: item.source || null,
-      sourceId: item.sourceId || null,
-      addedAt: item.addedAt || new Date().toISOString()
-    };
-    if (item.newCoverUrl) {
-      const name = await downloadCover(item.newCoverUrl);
+  ipcMain.handle('items:save', async (ev, raw) => {
+    const clean = sanitizeItem(raw);
+    if (!clean) throw new Error('Nieprawidłowe dane pozycji.');
+    let coverFailed = false;
+    if (raw && raw.newCoverUrl) {
+      const name = await downloadCover(String(raw.newCoverUrl));
       if (name) {
         if (clean.coverFile) deleteCoverFile(clean.coverFile);
         clean.coverFile = name;
+      } else {
+        coverFailed = true;
       }
     }
     const idx = items.findIndex((i) => i.id === clean.id);
     if (idx > -1) {
       const oldCover = items[idx].coverFile;
-      if (oldCover && oldCover !== clean.coverFile) deleteCoverFile(oldCover);
+      if (oldCover && oldCover !== clean.coverFile && !items.some((o, k) => k !== idx && o.coverFile === oldCover)) deleteCoverFile(oldCover);
       items[idx] = clean;
     } else {
       items.push(clean);
     }
+    if (clean.coverFile) sessionCovers.delete(clean.coverFile);
     saveItems();
-    return itemForRenderer(clean);
+    return Object.assign(itemForRenderer(clean), { coverFailed });
   });
 
   ipcMain.handle('items:delete', (ev, id) => {
     const idx = items.findIndex((i) => i.id === id);
     if (idx > -1) {
-      deleteCoverFile(items[idx].coverFile);
+      const cover = items[idx].coverFile;
       items.splice(idx, 1);
+      if (cover && !items.some((o) => o.coverFile === cover)) deleteCoverFile(cover);
       saveItems();
     }
     return true;
   });
 
-  ipcMain.handle('search:remote', (ev, params) => searchRemote(params || {}));
+  // Usuwa okładki wgrane w anulowanej/zakończonej edycji - wyłącznie te z bieżącej sesji i nieużywane przez żadną pozycję.
+  ipcMain.handle('cover:discard', (ev, names) => {
+    for (const n of Array.isArray(names) ? names : []) {
+      const base = safeBaseName(n);
+      if (!base || !sessionCovers.has(base)) continue;
+      sessionCovers.delete(base);
+      if (!items.some((i) => i.coverFile === base)) deleteCoverFile(base);
+    }
+    return true;
+  });
 
-  ipcMain.handle('lookup:tracks', (ev, p) =>
-    fetchTracklist((p && p.source) || '', (p && p.sourceId) || '').catch(() => '')
-  );
+  ipcMain.handle('search:remote', (ev, params) => lookup.searchRemote(params || {}));
+
+  ipcMain.handle('lookup:tracks', async (ev, p) => {
+    try {
+      return await lookup.fetchTracklist((p && p.source) || '', (p && p.sourceId) || '');
+    } catch (e) {
+      return { text: '', error: e.message };
+    }
+  });
 
   ipcMain.handle('settings:get', () => settings);
 
@@ -477,7 +431,7 @@ function setupIpc() {
     const token = (settings.discogsToken || '').trim();
     if (!token) return { hasToken: false };
     try {
-      const check = await verifyDiscogsToken(token);
+      const check = await lookup.verifyDiscogsToken(token);
       return { hasToken: true, valid: check.ok, username: check.username || null, message: check.message || null };
     } catch (e) {
       return { hasToken: true, valid: null, message: 'Brak połączenia z Discogs (' + e.message + ')' };
@@ -493,13 +447,13 @@ function setupIpc() {
     const token = String((s && s.discogsToken) || '').trim();
     let check;
     try {
-      check = await verifyDiscogsToken(token);
+      check = await lookup.verifyDiscogsToken(token);
     } catch (e) {
       check = { ok: false, message: 'Brak połączenia z Discogs (' + e.message + '). Token nie został zapisany.' };
     }
     if (!check.ok) return { ok: false, message: check.message };
     settings = Object.assign({}, settings, { discogsToken: token });
-    saveJson(settingsFile, settings);
+    saveSettings();
     return { ok: true, username: check.username || null, empty: !!check.empty };
   });
 
@@ -510,21 +464,34 @@ function setupIpc() {
       properties: ['openFile']
     });
     if (r.canceled || !r.filePaths[0]) return null;
-    const src = r.filePaths[0];
-    const ext = path.extname(src).toLowerCase() || '.jpg';
+    const buf = fs.readFileSync(r.filePaths[0]);
+    const ext = sniffImage(buf);
+    if (!ext) {
+      dialog.showMessageBox(mainWindow, { type: 'warning', message: 'Ten plik nie jest obsługiwanym obrazem.', buttons: ['OK'] });
+      return null;
+    }
     const name = crypto.randomUUID() + ext;
-    fs.copyFileSync(src, path.join(coversDir, name));
-    return { coverFile: name, coverUrl: pathToFileURL(path.join(coversDir, name)).href };
+    const full = path.join(coversDir, name);
+    fs.writeFileSync(full, buf);
+    sessionCovers.add(name);
+    return { coverFile: name, coverUrl: pathToFileURL(full).href };
   });
 
   ipcMain.handle('phone:info', async () => {
+    const ok = await startPhoneServer();
     const main = await getLanIp();
-    const url = 'http://' + main + ':' + PHONE_PORT + '/';
+    const withToken = (ip) => 'http://' + ip + ':' + PHONE_PORT + '/?t=' + phoneToken;
+    const url = withToken(main);
     const qr = await QRCode.toDataURL(url, { width: 260, margin: 1 });
     const altUrls = getAllLanIps()
       .filter((a) => a !== main)
-      .map((a) => 'http://' + a + ':' + PHONE_PORT + '/');
-    return { url, qr, altUrls, serverOk: !!phoneServer };
+      .map(withToken);
+    return { url, qr, altUrls, serverOk: ok, idleMinutes: PHONE_IDLE_MS / 60000 };
+  });
+
+  ipcMain.handle('phone:stop', () => {
+    stopPhoneServer('zakończono ręcznie');
+    return true;
   });
 
   ipcMain.handle('export:excel', async () => {
@@ -566,6 +533,23 @@ function setupIpc() {
 
   ipcMain.handle('backup:export', async () => {
     const today = new Date().toISOString().slice(0, 10);
+
+    // Token Discogs to sekret - do kopii trafia tylko za wyraźną zgodą (domyślnie: bez tokenu).
+    let includeToken = false;
+    if (settings.discogsToken) {
+      const ask = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Bez tokenu (zalecane)', 'Dołącz token', 'Anuluj'],
+        defaultId: 0,
+        cancelId: 2,
+        title: 'Kopia zapasowa',
+        message: 'Czy dołączyć token Discogs do kopii zapasowej?',
+        detail: 'Kopię łatwo przesłać dalej (e-mail, chmura). Token daje dostęp do Twojego konta Discogs — dołącz go tylko, jeśli kopia zostaje wyłącznie u Ciebie.'
+      });
+      if (ask.response === 2) return { ok: false, canceled: true };
+      includeToken = ask.response === 1;
+    }
+
     const r = await dialog.showSaveDialog(mainWindow, {
       title: 'Zapisz kopię zapasową',
       defaultPath: path.join(app.getPath('documents'), 'Album-kopia-' + today + '.zip'),
@@ -573,13 +557,8 @@ function setupIpc() {
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     try {
-      const zip = new AdmZip();
-      saveItems();
-      zip.addLocalFile(dataFile, '', 'collection.json');
-      if (fs.existsSync(settingsFile)) zip.addLocalFile(settingsFile, '', 'settings.json');
-      if (fs.existsSync(coversDir)) zip.addLocalFolder(coversDir, 'covers');
-      zip.writeZip(r.filePath);
-      return { ok: true, path: r.filePath, count: items.length };
+      const res = writeBackup(r.filePath, { items, coversDir, token: includeToken ? settings.discogsToken : '' });
+      return { ok: true, path: r.filePath, count: res.count, tokenIncluded: includeToken };
     } catch (e) {
       return { ok: false, message: e.message };
     }
@@ -593,12 +572,12 @@ function setupIpc() {
     });
     if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
     try {
-      const zip = new AdmZip(r.filePaths[0]);
-      const entry = zip.getEntry('collection.json');
-      if (!entry) return { ok: false, message: 'To nie jest kopia zapasowa aplikacji Album (brak collection.json).' };
-      const incoming = JSON.parse(zip.readAsText(entry));
-      if (!Array.isArray(incoming)) return { ok: false, message: 'Uszkodzony plik kopii zapasowej.' };
-
+      const backup = readBackup(r.filePaths[0]);
+      const detail =
+        'Kopia zawiera ' + backup.items.length + ' pozycji' +
+        (backup.skipped ? ' (pominięto ' + backup.skipped + ' nieprawidłowych)' : '') + '.\n' +
+        'Obecna kolekcja (' + items.length + ' pozycji) zostanie ZASTĄPIONA.\n' +
+        'Poprzednia wersja pliku kolekcji zostanie zachowana jako collection.json.bak.';
       const choice = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
         buttons: ['Przywróć', 'Anuluj'],
@@ -606,31 +585,16 @@ function setupIpc() {
         cancelId: 1,
         title: 'Przywracanie kopii zapasowej',
         message: 'Przywrócić kopię zapasową?',
-        detail:
-          'Kopia zawiera ' + incoming.length + ' pozycji.\n' +
-          'Obecna kolekcja (' + items.length + ' pozycji) zostanie ZASTĄPIONA.'
+        detail
       });
       if (choice.response !== 0) return { ok: false, canceled: true };
 
-      fs.rmSync(coversDir, { recursive: true, force: true });
-      fs.mkdirSync(coversDir, { recursive: true });
-      for (const e of zip.getEntries()) {
-        if (!e.isDirectory && e.entryName.startsWith('covers/')) {
-          const base = path.basename(e.entryName);
-          fs.writeFileSync(path.join(coversDir, base), e.getData());
-        }
-      }
-      items = incoming;
-      saveItems();
-      const s = zip.getEntry('settings.json');
-      if (s) {
-        try {
-          const imported = JSON.parse(zip.readAsText(s));
-          if (imported && typeof imported.discogsToken === 'string' && !settings.discogsToken) {
-            settings.discogsToken = imported.discogsToken;
-            saveJson(settingsFile, settings);
-          }
-        } catch {}
+      applyBackup(backup, { dataFile, coversDir });
+      items = backup.items;
+      sessionCovers.clear();
+      if (backup.token && !settings.discogsToken) {
+        settings = Object.assign({}, settings, { discogsToken: backup.token });
+        saveSettings();
       }
       sendToRenderer('data-changed', {});
       return { ok: true, count: items.length };
@@ -654,10 +618,17 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   });
+  // Interfejs jest lokalny - nie wpuszczamy żadnych nowych okien ani nawigacji poza aplikację.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) e.preventDefault();
+  });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  mainWindow.webContents.once('did-finish-load', reportLoadProblems);
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -677,12 +648,11 @@ if (!gotLock) {
     initPaths();
     loadAll();
     setupIpc();
-    startPhoneServer();
     createWindow();
   });
 
   app.on('window-all-closed', () => {
-    if (phoneServer) phoneServer.close();
+    stopPhoneServer();
     app.quit();
   });
 }

@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' file: data: https:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Album</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -14,11 +15,11 @@
         <div class="brand-sub" id="stats"></div>
       </div>
     </div>
-    <input type="search" id="searchInput" placeholder="Szukaj w kolekcji… (wykonawca, tytuł, wytwórnia)" />
+    <input type="search" id="searchInput" aria-label="Szukaj w kolekcji" placeholder="Szukaj w kolekcji… (wykonawca, tytuł, wytwórnia)" />
     <div class="topbar-actions">
       <button id="btnAdd" class="btn btn-primary">＋ Dodaj</button>
       <button id="btnPhone" class="btn">📱 Skanuj telefonem</button>
-      <button id="btnSettings" class="btn btn-icon" title="Ustawienia i kopia zapasowa">⚙</button>
+      <button id="btnSettings" class="btn btn-icon" title="Ustawienia i kopia zapasowa" aria-label="Ustawienia i kopia zapasowa">⚙</button>
     </div>
   </header>
 
@@ -52,10 +53,10 @@
 
   <!-- Modal: dodawanie / edycja -->
   <div class="modal-backdrop hidden" id="editModal">
-    <div class="modal modal-wide">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="editTitle">
       <div class="modal-head">
         <h2 id="editTitle">Dodaj pozycję</h2>
-        <button class="btn btn-icon modal-close" data-close="editModal">✕</button>
+        <button class="btn btn-icon modal-close" data-close="editModal" aria-label="Zamknij">✕</button>
       </div>
       <div class="modal-body edit-layout">
         <div class="edit-cover">
@@ -117,36 +118,38 @@
 
   <!-- Modal: skanowanie telefonem -->
   <div class="modal-backdrop hidden" id="phoneModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="phoneTitle">
       <div class="modal-head">
-        <h2>Skanowanie telefonem</h2>
-        <button class="btn btn-icon modal-close" data-close="phoneModal">✕</button>
+        <h2 id="phoneTitle">Skanowanie telefonem</h2>
+        <button class="btn btn-icon modal-close" data-close="phoneModal" aria-label="Zamknij">✕</button>
       </div>
       <div class="modal-body phone-body">
         <p>Zeskanuj kod QR telefonem (aparat lub przeglądarka).<br/>Telefon musi być w <b>tej samej sieci Wi‑Fi</b> co komputer.</p>
-        <img id="phoneQr" class="qr" alt="Kod QR" />
+        <img id="phoneQr" class="qr" alt="Kod QR do połączenia telefonu" />
         <div class="phone-url" id="phoneUrl"></div>
         <div class="hint" id="phoneAlt"></div>
         <p class="hint">Jeśli strona nie otwiera się na telefonie:<br/>
           1. Zezwól aplikacji Album na dostęp do sieci w zaporze Windows (okno pojawia się przy pierwszym uruchomieniu).<br/>
           2. Upewnij się, że telefon jest w tej samej sieci Wi‑Fi (nie w sieci gościnnej i nie na danych komórkowych).<br/>
           3. Jeśli nadal nie działa, w ustawieniach routera wyłącz „izolację klientów" (AP isolation).</p>
-        <div id="phoneLog" class="phone-log"></div>
+        <p class="hint">Połączenie jest chronione jednorazowym kodem z adresu (QR) i wygasa po <span id="phoneIdle">15</span> min bezczynności albo po kliknięciu „Zakończ połączenie".</p>
+        <div class="backup-buttons"><button id="btnPhoneStop" class="btn">⏹ Zakończ połączenie</button></div>
+        <div id="phoneLog" class="phone-log" aria-live="polite"></div>
       </div>
     </div>
   </div>
 
   <!-- Modal: ustawienia -->
   <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="modal-head">
-        <h2>Ustawienia</h2>
-        <button class="btn btn-icon modal-close" data-close="settingsModal">✕</button>
+        <h2 id="settingsTitle">Ustawienia</h2>
+        <button class="btn btn-icon modal-close" data-close="settingsModal" aria-label="Zamknij">✕</button>
       </div>
       <div class="modal-body">
         <div id="discogsStatus" class="discogs-status">Sprawdzam połączenie z Discogs…</div>
         <label class="settings-label">Token Discogs
-          <input type="text" id="discogsToken" placeholder="Wklej osobisty token z discogs.com" />
+          <input type="password" id="discogsToken" autocomplete="off" spellcheck="false" placeholder="Wklej osobisty token z discogs.com" />
         </label>
         <p class="hint">Bez tokenu działa tylko MusicBrainz, w którym brakuje większości polskich wydań
           (zwłaszcza kodów kreskowych). Darmowy token: zaloguj się na discogs.com, a potem skopiuj
@@ -157,7 +160,7 @@
         </div>
         <hr/>
         <h3>Kopia zapasowa</h3>
-        <p class="hint">Kopia zawiera całą kolekcję wraz z okładkami (plik ZIP).</p>
+        <p class="hint">Kopia zawiera całą kolekcję wraz z okładkami (plik ZIP). Token Discogs jest dołączany tylko za Twoją zgodą. Przywrócenie zastępuje obecną kolekcję (poprzednia wersja zostaje zapisana jako .bak).</p>
         <div class="backup-buttons">
           <button id="btnExport" class="btn">⬇ Utwórz kopię zapasową…</button>
           <button id="btnImport" class="btn">⬆ Przywróć z kopii…</button>
@@ -170,7 +173,7 @@
     </div>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>

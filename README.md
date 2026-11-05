@@ -6,27 +6,28 @@ Aplikacja Windows i Linux do kolekcjonowania **winyli, płyt CD i kaset magnetof
 
 **Windows — Microsoft Store (zalecane):** [pobierz Album ze Sklepu Microsoft](https://apps.microsoft.com/store/detail/9N456B4ZL0WH?cid=DevShareMCLPCS) — automatyczne aktualizacje, bez ręcznego pobierania plików.
 
-Alternatywnie: gotowe pliki `.exe`/`.AppImage`/`.deb` w folderze `dist` (patrz niżej) lub [Releases](https://github.com/zetmar-collab/album/releases).
+Alternatywnie: gotowe pliki `.exe`/`.AppImage`/`.deb` pobierzesz z [Releases](https://github.com/zetmar-collab/album/releases). Własnoręczna budowa tworzy je w folderze `dist` (patrz niżej).
 
-## Gotowe pliki (folder `dist`)
+## Pliki wydania (folder `dist`)
 
 **Windows**
-- **Album-1.0.0-portable.exe** — wersja przenośna, uruchamiasz bezpośrednio, bez instalacji
-- **Album-1.0.0-instalator.exe** — klasyczny instalator (skrót w menu Start)
+- **Album-1.1.0-portable.exe** — wersja przenośna, uruchamiasz bezpośrednio, bez instalacji
+- **Album-1.1.0-instalator.exe** — klasyczny instalator (skrót w menu Start)
 
 **Linux**
-- **Album-1.0.0-x86_64.AppImage** — wersja przenośna, `chmod +x` i uruchom bezpośrednio, działa na większości dystrybucji bez instalacji
-- **Album-1.0.0-amd64.deb** — pakiet dla Ubuntu/Debian i pochodnych (`sudo apt install ./Album-1.0.0-amd64.deb`)
+- **Album-1.1.0-x86_64.AppImage** — wersja przenośna, `chmod +x` i uruchom bezpośrednio, działa na większości dystrybucji bez instalacji
+- **Album-1.1.0-amd64.deb** — pakiet dla Ubuntu/Debian i pochodnych (`sudo apt install ./Album-1.1.0-amd64.deb`)
 
 Dane kolekcji są zapisywane w profilu użytkownika (Windows: `%APPDATA%\Album\album-data`, Linux: `~/.config/album/album-data`), więc nie znikają po aktualizacji aplikacji.
 
 ## Funkcje
 
-- Dodawanie pozycji ręcznie lub przez **skanowanie telefonem** (kod QR w aplikacji → telefon otwiera stronę skanera w przeglądarce, bez instalowania aplikacji na telefonie)
+- Dodawanie pozycji ręcznie lub przez **skanowanie telefonem** (kod QR w aplikacji → telefon otwiera stronę skanera w przeglądarce, bez instalowania aplikacji na telefonie). Serwer dla telefonu działa tylko po otwarciu okna skanowania, jest chroniony jednorazowym kodem z QR i wyłącza się po 15 minutach bezczynności.
 - Telefon robi zdjęcie **kodu kreskowego** → komputer odczytuje kod i pobiera dane wydania z **MusicBrainz** i **Discogs** (wykonawca, tytuł, rok, wytwórnia, nr katalogowy, okładka)
 - Telefon może też wysłać **zdjęcie okładki**, które zostanie przypisane do dodawanej pozycji
 - Wyszukiwanie, filtrowanie po formacie, sortowanie, stan nośnika, notatki
-- **Kopia zapasowa**: eksport i przywracanie całej kolekcji wraz z okładkami (plik ZIP) — Ustawienia ⚙
+- **Kopia zapasowa**: eksport i przywracanie całej kolekcji wraz z okładkami (plik ZIP) — Ustawienia ⚙. Przy przywracaniu poprzednia wersja kolekcji zostaje zapisana jako `collection.json.bak`.
+- Zapis danych jest atomowy; uszkodzony plik kolekcji nie jest po cichu nadpisywany — aplikacja przywraca ostatnią poprawną wersję i informuje o tym w oknie dialogowym.
 
 ## Wersja na Androida (APK)
 
@@ -36,7 +37,7 @@ W folderze `android/` jest natywna aplikacja na telefon (Kotlin + Jetpack Compos
 - komputer → telefon: na komputerze *Ustawienia → Utwórz kopię zapasową*, plik ZIP przenieś na telefon (kabel, Dysk Google, e-mail…), w aplikacji *⚙ → Wczytaj kopię z pliku*;
 - telefon → komputer: w aplikacji *⚙ → Wyślij kopię na komputer* (lub *Zapisz kopię do pliku*), a na komputerze *Ustawienia → Przywróć z kopii*;
 - przy wczytywaniu na telefonie można **scalić** (dodaje tylko brakujące pozycje) albo **zastąpić** całą kolekcję; komputer zawsze zastępuje.
-- Kopia zawiera token Discogs — nie wysyłaj jej osobom trzecim.
+- Token Discogs **nie jest** domyślnie dołączany do kopii; możesz go dołączyć świadomie (pytanie na komputerze, przełącznik w Ustawieniach na telefonie).
 
 ```
 cd android
@@ -58,6 +59,7 @@ Podpis wydania: `android/keystore/` i `android/keystore.properties` są w `.giti
 ```
 npm install         # zależności
 npm start           # uruchomienie w trybie deweloperskim
+npm test            # testy jednostkowe (zapis danych, kopie zapasowe, wyszukiwarka, serwer telefonu)
 npm run icon        # regeneracja assets/icon.ico z assets/icon.png
 npm run dist        # budowa dla Windows: portable + instalator (folder dist)
 npm run dist:store  # budowa pakietu AppX dla Microsoft Store (folder dist)

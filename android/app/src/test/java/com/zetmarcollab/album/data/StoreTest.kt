@@ -97,7 +97,8 @@ class StoreTest {
         setOf("id", "format", "artist", "title", "year", "label", "catalogNumber", "barcode", "genre", "country", "condition", "tracklist", "notes", "coverFile", "source", "sourceId", "addedAt"),
         keys,
       )
-      assertEquals("TEST-TOKEN-NOT-REAL", JSONObject(z.getInputStream(z.getEntry("settings.json")).readBytes().toString(Charsets.UTF_8)).getString("discogsToken"))
+      // domyslnie token NIE trafia do kopii (jest sekretem), ale settings.json zostaje dla zgodnosci z desktopem
+      assertEquals("", JSONObject(z.getInputStream(z.getEntry("settings.json")).readBytes().toString(Charsets.UTF_8)).getString("discogsToken"))
     }
 
     val b = newStore("b")
@@ -106,6 +107,78 @@ class StoreTest {
     // zapis do katalogu build dla sprawdzenia przez Node (adm-zip z desktopu)
     File("build/test-output").mkdirs()
     out.copyTo(File("build/test-output/android-export.zip"), overwrite = true)
+  }
+
+  @Test
+  fun exportIncludesTokenOnlyWhenAsked() {
+    val a = newStore("a")
+    a.importBackup(fixture, ImportMode.REPLACE)
+    val out = File(root, "with-token.zip")
+    out.outputStream().use { a.exportBackup(it, includeToken = true) }
+    ZipFile(out).use { z ->
+      assertEquals("TEST-TOKEN-NOT-REAL", JSONObject(z.getInputStream(z.getEntry("settings.json")).readBytes().toString(Charsets.UTF_8)).getString("discogsToken"))
+    }
+  }
+
+  @Test
+  fun corruptCollectionIsKeptAndRestoredFromBak() {
+    val dir = File(root, "data").apply { mkdirs() }
+    val s1 = Store(dir)
+    s1.upsert(Item(id = "1", artist = "A", title = "Pierwsza"))
+    s1.upsert(Item(id = "2", artist = "B", title = "Druga")) // przy drugim zapisie poprzednia wersja trafia do .bak
+    File(dir, "collection.json").writeText("[{\"id\":\"1\",") // symulacja urwanego zapisu
+
+    val s2 = Store(dir)
+    assertEquals(LoadStatus.RESTORED, s2.loadStatus)
+    assertEquals(1, s2.items.size) // wersja z .bak (przed drugim zapisem)
+    assertTrue(dir.listFiles()!!.any { it.name.startsWith("collection.json.corrupt-") })
+  }
+
+  @Test
+  fun corruptCollectionWithoutBakIsReportedNotSilentlyReplaced() {
+    val dir = File(root, "data").apply { mkdirs() }
+    File(dir, "collection.json").writeText("to nie jest json")
+    val s = Store(dir)
+    assertEquals(LoadStatus.CORRUPT, s.loadStatus)
+    assertTrue(s.items.isEmpty())
+    assertTrue(dir.listFiles()!!.any { it.name.startsWith("collection.json.corrupt-") })
+  }
+
+  @Test
+  fun nonObjectElementsAreSkippedAndDuplicateIdsFixed() {
+    val dir = File(root, "data").apply { mkdirs() }
+    File(dir, "collection.json").writeText("""[null, 7, {"id":"x","format":"cd","title":"A"}, {"id":"x","format":"cd","title":"B"}]""")
+    val s = Store(dir)
+    assertEquals(LoadStatus.OK, s.loadStatus)
+    assertEquals(2, s.items.size)
+    assertEquals(2, s.skippedOnLoad)
+    assertEquals(2, s.items.map { it.id }.toSet().size)
+  }
+
+  @Test
+  fun importDropsCoverEntriesThatAreNotImages() {
+    val zip = File(root, "evil.zip")
+    ZipOutputStream(zip.outputStream()).use { z ->
+      z.putNextEntry(ZipEntry("collection.json"))
+      z.write("""[{"id":"1","format":"cd","title":"T","coverFile":"skrypt.jpg"}]""".toByteArray())
+      z.closeEntry()
+      z.putNextEntry(ZipEntry("covers/skrypt.jpg"))
+      z.write("#!/bin/sh\nrm -rf /".toByteArray())
+      z.closeEntry()
+    }
+    val store = newStore()
+    store.importBackup(zip, ImportMode.REPLACE)
+    assertEquals(1, store.items.size)
+    assertNull(store.items[0].coverFile) // tresc nie jest obrazem, wiec okladka odrzucona
+    assertNull(store.coverFileOf("skrypt.jpg"))
+  }
+
+  @Test
+  fun looksLikeImageRecognisesCommonFormats() {
+    assertTrue(Store.looksLikeImage(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2)))
+    assertTrue(Store.looksLikeImage(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)))
+    assertFalse(Store.looksLikeImage("<html>".toByteArray()))
+    assertFalse(Store.looksLikeImage(ByteArray(0)))
   }
 
   @Test

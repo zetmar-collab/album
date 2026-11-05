@@ -17,6 +17,8 @@ import com.zetmarcollab.album.data.Lookup
 import com.zetmarcollab.album.data.RemoteResult
 import com.zetmarcollab.album.data.SearchOutcome
 import com.zetmarcollab.album.data.Store
+import com.zetmarcollab.album.data.LoadStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.Collator
+import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,6 +66,22 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
     private set
   var token by mutableStateOf(store.discogsToken)
     private set
+
+  /** Informacja o problemie z plikiem kolekcji wykrytym przy starcie (nic nie znika po cichu). */
+  var startupNotice by mutableStateOf<String?>(
+    when (store.loadStatus) {
+      LoadStatus.CORRUPT ->
+        "Plik kolekcji był uszkodzony i nie udało się go odzyskać. Aplikacja wystartowała z pustą kolekcją. " +
+          "Uszkodzony plik został zachowany w pamięci aplikacji; możesz wczytać kopię zapasową w Ustawieniach."
+      LoadStatus.RESTORED -> "Plik kolekcji był uszkodzony — przywrócono ostatnią poprawną wersję."
+      else -> if (store.skippedOnLoad > 0) "Pominięto ${store.skippedOnLoad} nieprawidłowych pozycji w pliku kolekcji." else null
+    },
+  )
+    private set
+
+  fun dismissStartupNotice() {
+    startupNotice = null
+  }
 
   private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
   val messages: SharedFlow<String> = _messages
@@ -107,13 +126,18 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
     prefs.edit().putString("view", if (grid) "grid" else "list").apply()
   }
 
+  private fun norm(s: String): String =
+    Normalizer.normalize(s.lowercase().replace('ł', 'l'), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+
+  /** Wywolywane w `remember(...)` z kluczami stanu - nie przy kazdej rekompozycji. */
   fun visibleItems(): List<Item> {
-    val q = query.trim().lowercase()
+    val words = norm(query).split(Regex("\\s+")).filter { it.isNotEmpty() }
     val collator = Collator.getInstance(Locale.forLanguageTag("pl"))
     val filtered =
       items.filter { i ->
         (formatFilter == null || i.format == formatFilter) &&
-          (q.isEmpty() || listOf(i.artist, i.title, i.label, i.genre, i.year, i.catalogNumber, i.barcode).joinToString(" ").lowercase().contains(q))
+          (words.isEmpty() ||
+            norm(listOf(i.artist, i.title, i.label, i.genre, i.year, i.catalogNumber, i.barcode, i.notes).joinToString(" ")).let { hay -> words.all { it in hay } })
       }
     return when (sortKey) {
       SortKey.ADDED -> filtered.sortedByDescending { it.addedAt }
@@ -150,8 +174,28 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   private val sessionCovers = mutableSetOf<String>()
   private var trackSeq = 0
 
+  /** Stan formularza przy otwarciu - do wykrywania niezapisanych zmian. */
+  private var formBaseline = Item()
+  var discardPrompt by mutableStateOf(false)
+    private set
+
+  fun isFormDirty(): Boolean = form != formBaseline || newCoverUrl != null
+
+  /** Wyjscie z edycji: przy niezapisanych zmianach najpierw pytamy. */
+  fun requestCloseEdit() {
+    if (isFormDirty()) discardPrompt = true else closeEdit()
+  }
+
+  fun dismissDiscardPrompt() {
+    discardPrompt = false
+  }
+
   private fun resetEditState(item: Item, new: Boolean) {
+    trackSeq++ // unieważnia trwające pobieranie listy utworów z poprzedniej pozycji
+    tracksLoading = false
+    discardPrompt = false
     form = item
+    formBaseline = if (new && item.barcode.isNotEmpty()) Item() else item // zeskanowana pozycja liczy sie jako niezapisana
     isNew = new
     newCoverUrl = null
     outcome = null
@@ -176,6 +220,9 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   fun closeEdit() {
+    trackSeq++
+    tracksLoading = false
+    discardPrompt = false
     val unused = sessionCovers.toList()
     sessionCovers.clear()
     viewModelScope.launch { io { unused.forEach { store.deleteCover(it) } } }
@@ -232,10 +279,11 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
       val seq = ++trackSeq
       tracksLoading = true
       viewModelScope.launch {
-        val txt = Lookup.fetchTracklist(token, r.source, r.sourceId)
+        val res = Lookup.fetchTracklist(token, r.source, r.sourceId)
         if (seq != trackSeq) return@launch
         tracksLoading = false
-        if (txt.isNotBlank()) form = form.copy(tracklist = txt)
+        if (res.error != null) say("Nie udało się pobrać listy utworów: ${res.error}")
+        else if (res.text.isNotBlank()) form = form.copy(tracklist = res.text)
       }
     }
   }
@@ -246,21 +294,26 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   private var searchJob: Job? = null
+  private var searchCounter = 0
 
   fun searchOnline(text: String) {
     val q = text.trim()
     if (q.isEmpty()) return
     searchJob?.cancel()
+    val mySearch = ++searchCounter
     searchJob =
       viewModelScope.launch {
         searching = true
         try {
           val isBarcode = Regex("^[0-9\\s-]{7,16}$").matches(q)
           outcome = if (isBarcode) Lookup.search(token, barcode = q.filter { it.isDigit() }) else Lookup.search(token, query = q)
+        } catch (e: CancellationException) {
+          throw e // zastąpione nowszym wyszukiwaniem - to nie jest błąd
         } catch (e: Exception) {
           say("Błąd wyszukiwania: ${e.message}")
         } finally {
-          searching = false
+          // spinner należy do najnowszego wyszukiwania (anulowane stare nie może go wyłączyć)
+          if (mySearch == searchCounter) searching = false
         }
       }
   }
@@ -294,11 +347,15 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
       try {
         var item = trimmed
         val url = newCoverUrl
+        var coverFailed = false
         if (url != null) {
           val target = store.newCoverFile(if (url.lowercase().contains(".png")) ".png" else ".jpg")
           if (Lookup.downloadCover(url, target)) {
             sessionCovers += target.name
             item = item.copy(coverFile = target.name)
+          } else {
+            target.delete()
+            coverFailed = true
           }
         }
         val keep = item.coverFile
@@ -309,7 +366,13 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
         sessionCovers.clear()
         refresh()
         screen = Screen.MAIN
-        say(if (isNew) "Dodano do kolekcji: ${item.artist.ifBlank { item.title }}" else "Zapisano zmiany.")
+        say(
+          when {
+            coverFailed -> "Zapisano, ale nie udało się pobrać okładki (sprawdź połączenie lub wybierz zdjęcie ręcznie)."
+            isNew -> "Dodano do kolekcji: ${item.artist.ifBlank { item.title }}"
+            else -> "Zapisano zmiany."
+          },
+        )
       } catch (e: Exception) {
         say("Błąd zapisu: ${e.message}")
       } finally {
@@ -404,6 +467,9 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   var backupBusy by mutableStateOf(false)
     private set
 
+  /** Token Discogs to sekret - do kopii trafia tylko, gdy uzytkownik sam to wlaczy (domyslnie nie). */
+  var backupWithToken by mutableStateOf(false)
+
   private fun backupName(): String = "Album-kopia-" + SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) + ".zip"
 
   fun suggestedBackupName(): String = backupName()
@@ -413,9 +479,10 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
       backupBusy = true
       try {
         val count = items.size
+        val includeToken = backupWithToken
         io {
-          val out = getApplication<Application>().contentResolver.openOutputStream(uri, "w") ?: error("Nie można zapisać pliku.")
-          out.use { store.exportBackup(it) }
+          val out = getApplication<Application>().contentResolver.openOutputStream(uri, "wt") ?: error("Nie można zapisać pliku.")
+          out.use { store.exportBackup(it, includeToken) }
         }
         say("Utworzono kopię zapasową ($count pozycji).")
       } catch (e: Exception) {
@@ -430,11 +497,12 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   suspend fun makeShareFile(): File? =
     try {
       backupBusy = true
+      val includeToken = backupWithToken
       io {
         val dir = File(getApplication<Application>().cacheDir, "share").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val f = File(dir, backupName())
-        f.outputStream().use { store.exportBackup(it) }
+        f.outputStream().use { store.exportBackup(it, includeToken) }
         f
       }
     } catch (e: Exception) {

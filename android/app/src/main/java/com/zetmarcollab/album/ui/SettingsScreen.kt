@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -92,14 +93,19 @@ fun SettingsScreen(vm: AlbumViewModel, onExportFile: () -> Unit, onShare: () -> 
       Button(onClick = onShare, enabled = !vm.backupBusy, modifier = Modifier.fillMaxWidth()) { Text("📤 Wyślij kopię na komputer (udostępnij)…") }
       OutlinedButton(onClick = onExportFile, enabled = !vm.backupBusy, modifier = Modifier.fillMaxWidth()) { Text("⬇ Zapisz kopię do pliku…") }
       OutlinedButton(onClick = onImportFile, enabled = !vm.backupBusy, modifier = Modifier.fillMaxWidth()) { Text("⬆ Wczytaj kopię z pliku…") }
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Switch(checked = vm.backupWithToken, onCheckedChange = { vm.backupWithToken = it })
+        Text("Dołącz token Discogs do kopii", Modifier.weight(1f))
+      }
       Text(
-        "Uwaga: kopia zawiera też Twój token Discogs. Nie wysyłaj jej osobom trzecim.",
+        if (vm.backupWithToken) "Kopia będzie zawierać Twój token Discogs — nie wysyłaj jej osobom trzecim."
+        else "Domyślnie token NIE trafia do kopii (bezpieczniej przy wysyłaniu pliku). Na komputerze wpisz go ponownie w Ustawieniach.",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
 
       HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline)
-      Text("Album 1.0.0 · dane są przechowywane tylko na tym urządzeniu.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text("Album 1.1.0 · dane są przechowywane tylko na tym urządzeniu.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 

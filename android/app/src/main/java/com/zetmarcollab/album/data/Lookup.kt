@@ -33,6 +33,9 @@ data class SearchOutcome(
   val musicBrainzCount: Int,
 )
 
+/** Lista utworow jako tekst albo komunikat o bledzie (zamiast cichego pustego wyniku). */
+data class Tracklist(val text: String, val error: String? = null)
+
 data class TokenCheck(val ok: Boolean, val username: String? = null, val message: String? = null)
 
 /**
@@ -45,6 +48,9 @@ object Lookup {
   private class HttpFailure(val code: Int) : Exception("HTTP $code")
 
   private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+  /** Token Discogs idzie wylacznie w naglowku (adresy URL trafiaja do logow i historii). */
+  private fun discogsAuth(token: String) = mapOf("Authorization" to "Discogs token=${token.trim()}")
 
   private fun open(url: String, headers: Map<String, String> = emptyMap()): HttpURLConnection =
     (URL(url).openConnection() as HttpURLConnection).apply {
@@ -60,7 +66,7 @@ object Lookup {
     try {
       val code = c.responseCode
       // MusicBrainz limituje do ok. 1 zapytania/s i odpowiada 503 - jedna ponowna proba zwykle wystarcza.
-      if (code == 503 && retry) {
+      if ((code == 503 || code == 429) && retry) {
         c.disconnect()
         Thread.sleep(1500)
         return getJson(url, headers, retry = false)
@@ -114,12 +120,17 @@ object Lookup {
   /** Zwraca (wyniki, blad). Blad dotyczy np. braku/nieprawidlowego tokenu. */
   private fun searchDiscogs(token: String, params: Map<String, String>): Pair<List<RemoteResult>, String?> {
     if (token.isBlank()) return emptyList<RemoteResult>() to "Brak tokenu Discogs — dodaj go w Ustawieniach, aby przeszukiwać Discogs."
-    val qs = (params + mapOf("type" to "release", "per_page" to "8", "token" to token.trim())).entries.joinToString("&") { "${it.key}=${enc(it.value)}" }
+    val qs = (params + mapOf("type" to "release", "per_page" to "8")).entries.joinToString("&") { "${it.key}=${enc(it.value)}" }
     val data =
       try {
-        getJson("https://api.discogs.com/database/search?$qs")
+        getJson("https://api.discogs.com/database/search?$qs", discogsAuth(token))
       } catch (e: HttpFailure) {
-        return emptyList<RemoteResult>() to if (e.code == 401) "Discogs: nieprawidłowy token (sprawdź Ustawienia)." else "Discogs: HTTP ${e.code}"
+        return emptyList<RemoteResult>() to
+          when (e.code) {
+            401 -> "Discogs: nieprawidłowy token (sprawdź Ustawienia)."
+            429 -> "Discogs: przekroczono limit zapytań — spróbuj za chwilę."
+            else -> "Discogs: HTTP ${e.code}"
+          }
       }
     val arr = data.optJSONArray("results") ?: return emptyList<RemoteResult>() to null
     val list =
@@ -148,23 +159,17 @@ object Lookup {
     return list to null
   }
 
-  private fun searchDiscogsBarcode(token: String, variants: List<String>): Pair<List<RemoteResult>, String?> {
-    for (v in variants) {
-      val r = searchDiscogs(token, mapOf("barcode" to v))
-      if (r.second != null || r.first.isNotEmpty()) return r
+  private suspend fun searchDiscogsBarcode(token: String, variants: List<String>): Pair<List<RemoteResult>, String?> =
+    coroutineScope {
+      // Warianty kodu odpytujemy rownolegle (zamiast kilku zapytan jedno po drugim).
+      val byField = variants.map { v -> async { runCatching { searchDiscogs(token, mapOf("barcode" to v)) } } }.map { it.await() }
+      byField.firstNotNullOfOrNull { r -> r.getOrNull()?.takeIf { it.second != null } }?.let { return@coroutineScope it }
+      byField.firstNotNullOfOrNull { r -> r.getOrNull()?.takeIf { it.first.isNotEmpty() } }?.let { return@coroutineScope it }
+      // Discogs czesto trzyma kody ze spacjami ("7 24384 26095 8") - wtedy pomaga wyszukiwanie pelnotekstowe.
+      val byText = variants.map { v -> async { runCatching { searchDiscogs(token, mapOf("q" to v)) } } }.map { it.await() }
+      byText.firstNotNullOfOrNull { r -> r.getOrNull()?.takeIf { it.first.isNotEmpty() } }?.let { return@coroutineScope it }
+      emptyList<RemoteResult>() to byText.firstNotNullOfOrNull { r -> r.getOrNull()?.second }
     }
-    // Discogs czesto trzyma kody ze spacjami ("7 24384 26095 8") - wtedy pomaga wyszukiwanie pelnotekstowe.
-    var error: String? = null
-    for (v in variants) {
-      val r = searchDiscogs(token, mapOf("q" to v))
-      if (r.second != null) {
-        error = r.second
-        break
-      }
-      if (r.first.isNotEmpty()) return r
-    }
-    return emptyList<RemoteResult>() to error
-  }
 
   /** Wyszukiwanie po kodzie kreskowym (gdy `barcode` niepuste) albo po tekscie. */
   suspend fun search(token: String, barcode: String? = null, query: String? = null): SearchOutcome =
@@ -194,13 +199,25 @@ object Lookup {
   }
 
   /** Lista utworow jako tekst, po jednym w wierszu: "1. Tytul (3:45)". */
-  suspend fun fetchTracklist(token: String, source: String, sourceId: String): String =
+  suspend fun fetchTracklist(token: String, source: String, sourceId: String): Tracklist =
     withContext(Dispatchers.IO) {
-      runCatching {
+      try {
+        Tracklist(fetchTracklistText(token, source, sourceId))
+      } catch (e: HttpFailure) {
+        Tracklist("", "$source: HTTP ${e.code}")
+      } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Tracklist("", e.message ?: "nieznany błąd")
+      }
+    }
+
+  private fun fetchTracklistText(token: String, source: String, sourceId: String): String =
+    run {
         when (source) {
           "MusicBrainz" -> {
             val data = getJson("https://musicbrainz.org/ws/2/release/${enc(sourceId)}?inc=recordings&fmt=json", mapOf("Accept" to "application/json"))
-            val media = data.optJSONArray("media") ?: return@runCatching ""
+            val media = data.optJSONArray("media") ?: return@run ""
             val multi = media.length() > 1
             val lines = mutableListOf<String>()
             for (mi in 0 until media.length()) {
@@ -218,9 +235,9 @@ object Lookup {
             lines.joinToString("\n")
           }
           "Discogs" -> {
-            if (token.isBlank()) return@runCatching ""
-            val data = getJson("https://api.discogs.com/releases/${enc(sourceId)}?token=${enc(token.trim())}")
-            val arr = data.optJSONArray("tracklist") ?: return@runCatching ""
+            if (token.isBlank()) error("Brak tokenu Discogs — nie można pobrać listy utworów.")
+            val data = getJson("https://api.discogs.com/releases/${enc(sourceId)}", discogsAuth(token))
+            val arr = data.optJSONArray("tracklist") ?: return@run ""
             (0 until arr.length())
               .map { arr.getJSONObject(it) }
               .filter { it.optString("type_") != "heading" }
@@ -232,7 +249,6 @@ object Lookup {
           }
           else -> ""
         }
-      }.getOrDefault("")
     }
 
   suspend fun verifyToken(token: String): TokenCheck =
@@ -256,8 +272,9 @@ object Lookup {
         val c = open(url)
         try {
           if (c.responseCode !in 200..299) return@runCatching false
+          if (c.contentLengthLong > Store.MAX_COVER_BYTES) return@runCatching false
           val bytes = c.inputStream.use { it.readBytes() }
-          if (bytes.size < 100) return@runCatching false
+          if (bytes.size < 100 || bytes.size > Store.MAX_COVER_BYTES || !Store.looksLikeImage(bytes)) return@runCatching false
           target.writeBytes(bytes)
           true
         } finally {

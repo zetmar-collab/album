@@ -52,13 +52,13 @@ fun EditScreen(vm: AlbumViewModel, onPickGallery: () -> Unit, onTakePhoto: () ->
   val form = vm.form
   var onlineQuery by remember { mutableStateOf("") }
   var confirmDelete by remember { mutableStateOf(false) }
-  BackHandler { vm.closeEdit() }
+  BackHandler { vm.requestCloseEdit() }
 
   Scaffold(
     containerColor = MaterialTheme.colorScheme.background,
     topBar = {
       Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { vm.closeEdit() }) { Text("✕ Anuluj", color = MaterialTheme.colorScheme.onSurface) }
+        TextButton(onClick = { vm.requestCloseEdit() }) { Text("✕ Anuluj", color = MaterialTheme.colorScheme.onSurface) }
         Text(
           if (vm.isNew) "Dodaj pozycję" else "Edytuj pozycję",
           fontWeight = FontWeight.Bold,
@@ -155,6 +155,15 @@ fun EditScreen(vm: AlbumViewModel, onPickGallery: () -> Unit, onTakePhoto: () ->
       text = { Text("„${form.displayArtist} — ${form.displayTitle}”") },
       confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deleteCurrent() }) { Text("Usuń", color = AlbumDanger) } },
       dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Anuluj") } },
+    )
+  }
+  if (vm.discardPrompt) {
+    AlertDialog(
+      onDismissRequest = { vm.dismissDiscardPrompt() },
+      title = { Text("Odrzucić zmiany?") },
+      text = { Text("Masz niezapisane zmiany. Zamknąć bez zapisywania?") },
+      confirmButton = { TextButton(onClick = { vm.closeEdit() }) { Text("Odrzuć", color = AlbumDanger) } },
+      dismissButton = { TextButton(onClick = { vm.dismissDiscardPrompt() }) { Text("Wróć do edycji") } },
     )
   }
   if (vm.duplicatePrompt) {

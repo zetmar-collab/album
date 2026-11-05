@@ -88,9 +88,28 @@ data class Item(
       )
     }
 
-    fun listFromJson(text: String): List<Item> {
+    fun listFromJson(text: String): List<Item> = parseList(text).items
+
+    /** Wynik tolerancyjnego wczytania: elementy, ktore nie sa obiektami (np. null), sa pomijane i liczone. */
+    class Parsed(val items: List<Item>, val skipped: Int)
+
+    fun parseList(text: String): Parsed {
       val arr = JSONArray(text)
-      return List(arr.length()) { fromJson(arr.getJSONObject(it)) }
+      val seen = mutableSetOf<String>()
+      val out = mutableListOf<Item>()
+      var skipped = 0
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i)
+        if (o == null) {
+          skipped++
+          continue
+        }
+        var item = fromJson(o)
+        // Zduplikowane id psulyby edycje i usuwanie - nadajemy nowe.
+        if (!seen.add(item.id)) item = item.copy(id = UUID.randomUUID().toString()).also { seen.add(it.id) }
+        out += item
+      }
+      return Parsed(out, skipped)
     }
 
     fun listToJson(items: List<Item>): String {

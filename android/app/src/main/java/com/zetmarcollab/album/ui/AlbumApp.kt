@@ -10,8 +10,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -92,5 +95,13 @@ fun AlbumApp(vm: AlbumViewModel = viewModel()) {
         )
     }
     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+    vm.startupNotice?.let { notice ->
+      AlertDialog(
+        onDismissRequest = { vm.dismissStartupNotice() },
+        title = { Text("Problem z danymi kolekcji") },
+        text = { Text(notice) },
+        confirmButton = { TextButton(onClick = { vm.dismissStartupNotice() }) { Text("OK") } },
+      )
+    }
   }
 }
