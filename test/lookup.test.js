@@ -108,7 +108,14 @@ test('fetchRetry: po drugim 503 zwraca odpowiedź bez pętli; timeout daje czyte
 
   const hang = (url, opts) =>
     new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason)));
-  await assert.rejects(fetchRetry('http://x', {}, { fetchImpl: hang, timeout: 30 }), /przekroczono czas oczekiwania/);
+  // AbortSignal.timeout jest "unref" (na Node 22 pętla zdarzeń kończy się, gdy nic innego nie czeka),
+  // a prawdziwy fetch trzyma gniazdo - w teście symulujemy to zwykłym timerem.
+  const keepAlive = setTimeout(() => {}, 5000);
+  try {
+    await assert.rejects(fetchRetry('http://x', {}, { fetchImpl: hang, timeout: 30 }), /przekroczono czas oczekiwania/);
+  } finally {
+    clearTimeout(keepAlive);
+  }
 });
 
 test('fetchTracklist: jawny błąd zamiast pustego tekstu przy HTTP 503', async () => {
