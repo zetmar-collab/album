@@ -174,6 +174,13 @@ class StoreTest {
   }
 
   @Test
+  fun readLimitedStopsAtActualByteLimit() {
+    assertEquals(5, Store.readLimited(ByteArray(5).inputStream(), 10).size)
+    val e = runCatching { Store.readLimited(ByteArray(100).inputStream(), 10) }.exceptionOrNull()
+    assertNotNull(e)
+  }
+
+  @Test
   fun looksLikeImageRecognisesCommonFormats() {
     assertTrue(Store.looksLikeImage(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2)))
     assertTrue(Store.looksLikeImage(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)))

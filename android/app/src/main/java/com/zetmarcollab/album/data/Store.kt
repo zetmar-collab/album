@@ -193,7 +193,7 @@ class Store(private val dataDir: File) {
   private fun readIncoming(zip: ZipFile): List<Item> {
     val entry = zip.getEntry("collection.json") ?: error("To nie jest kopia zapasowa aplikacji Album (brak collection.json).")
     check(entry.size in 0..MAX_COLLECTION_BYTES) { "Plik kolekcji w kopii jest zbyt duży." }
-    val text = zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+    val text = zip.getInputStream(entry).use { readLimited(it, MAX_COLLECTION_BYTES).toString(Charsets.UTF_8) }
     return try {
       Item.parseList(text).items
     } catch (e: Exception) {
@@ -221,7 +221,7 @@ class Store(private val dataDir: File) {
       fun copyCover(name: String, to: File): Boolean {
         val e = zip.getEntry("covers/$name") ?: return false
         if (e.isDirectory || e.size !in 1..MAX_COVER_BYTES) return false
-        val bytes = zip.getInputStream(e).use { it.readBytes() }
+        val bytes = zip.getInputStream(e).use { runCatching { readLimited(it, MAX_COVER_BYTES) }.getOrNull() } ?: return false
         if (!looksLikeImage(bytes)) return false
         to.writeBytes(bytes)
         return true
@@ -296,6 +296,24 @@ class Store(private val dataDir: File) {
     const val MAX_BACKUP_BYTES = 512L * 1024 * 1024
     const val MAX_COLLECTION_BYTES = 64L * 1024 * 1024
     const val MAX_COVER_BYTES = 20L * 1024 * 1024
+
+    /**
+     * Czyta strumien z twardym limitem rzeczywistych bajtow. Rozmiar zadeklarowany w naglowku ZIP-a
+     * pochodzi z pliku i moze klamac (zip bomb), wiec nie wolno mu ufac.
+     */
+    fun readLimited(input: InputStream, limit: Long): ByteArray {
+      val out = java.io.ByteArrayOutputStream()
+      val buf = ByteArray(64 * 1024)
+      var total = 0L
+      while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        total += n
+        check(total <= limit) { "Plik w kopii zapasowej jest zbyt duży." }
+        out.write(buf, 0, n)
+      }
+      return out.toByteArray()
+    }
 
     /** Sygnatury JPEG, PNG, WebP, GIF i BMP - ZIP z obcego zrodla nie moze wstrzyknac innych plikow do okladek. */
     fun looksLikeImage(b: ByteArray): Boolean {
