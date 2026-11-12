@@ -13,9 +13,9 @@
       padding: 16px;
       min-height: 100vh;
     }
-    h1 { font-size: 22px; text-align: center; margin: 10px 0 2px; }
-    h1 span { color: #e05a3a; }
-    .sub { text-align: center; color: #9aa0b0; font-size: 13px; margin-bottom: 20px; }
+    h1 { font-size: 22px; text-align: center; margin: 10px 0 2px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    h1 svg { width: 30px; height: 30px; color: #e8603f; }
+    .sub { text-align: center; color: #a7aebf; font-size: 13px; margin-bottom: 20px; }
     .card {
       background: #1e2028;
       border: 1px solid #343845;
@@ -24,20 +24,22 @@
       margin-bottom: 14px;
     }
     .card h2 { font-size: 15px; margin-bottom: 4px; }
-    .card p { font-size: 12px; color: #9aa0b0; margin-bottom: 12px; line-height: 1.4; }
+    .card p { font-size: 13px; color: #a7aebf; margin-bottom: 12px; line-height: 1.4; }
     .bigbtn {
       display: block;
       width: 100%;
       padding: 16px;
       border-radius: 10px;
       border: none;
-      background: #e05a3a;
+      background: #c8472a;
       color: #fff;
       font-size: 16px;
       font-weight: 700;
       text-align: center;
       cursor: pointer;
     }
+    .bigbtn:active, .manual button:active { transform: translateY(1px); }
+    .bigbtn:focus-visible, .manual button:focus-visible, .manual input:focus-visible { outline: 2px solid #e8603f; outline-offset: 2px; }
     .bigbtn.secondary { background: #262933; border: 1px solid #343845; }
     input[type="file"] { display: none; }
     .manual { display: flex; gap: 8px; }
@@ -54,7 +56,7 @@
       padding: 14px 18px;
       border-radius: 10px;
       border: none;
-      background: #e05a3a;
+      background: #c8472a;
       color: #fff;
       font-size: 16px;
       font-weight: 700;
@@ -70,32 +72,39 @@
     #status.ok { display: block; background: #1d3325; border: 1px solid #2f6b42; }
     #status.err { display: block; background: #3a2020; border: 1px solid #7a3a3a; }
     #status.busy { display: block; background: #262933; border: 1px solid #343845; }
+    /* ikony statusu rysowane w CSS (zamiast emoji, które różnią się między telefonami) */
+    #status::before { display: inline-block; width: 1.3em; font-weight: 700; }
+    #status.ok::before { content: "\2713"; color: #9fe0b4; }
+    #status.err::before { content: "\2715"; color: #f0a8a8; }
+    #status.busy::before { content: ""; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid #5b6175; border-top-color: #e8603f; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #status.busy::before { animation: none; } }
   </style>
 </head>
 <body>
-  <h1><span>◉</span> Album</h1>
+  <h1><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><circle cx="16" cy="16" r="5" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="#14151a"/></svg> Album</h1>
   <div class="sub">Skaner podłączony do komputera</div>
 
   <div id="status"></div>
 
   <div class="card">
-    <h2>📷 Skanuj kod kreskowy</h2>
+    <h2>Skanuj kod kreskowy</h2>
     <p>Zrób wyraźne zdjęcie kodu kreskowego z tyłu płyty. Komputer odczyta kod i wyszuka album w bazach MusicBrainz i Discogs.</p>
     <label class="bigbtn" for="barcodePhoto">Zrób zdjęcie kodu</label>
     <input type="file" id="barcodePhoto" accept="image/*" capture="environment" />
   </div>
 
   <div class="card">
-    <h2>⌨️ Wpisz kod ręcznie</h2>
+    <h2>Wpisz kod ręcznie</h2>
     <p>Jeśli zdjęcie się nie udaje, przepisz cyfry spod kodu kreskowego.</p>
     <div class="manual">
-      <input type="tel" id="manualCode" placeholder="np. 5099749534728" />
+      <input type="tel" id="manualCode" aria-label="Kod kreskowy" placeholder="np. 5099749534728" />
       <button id="sendManual">Wyślij</button>
     </div>
   </div>
 
   <div class="card">
-    <h2>🖼️ Zdjęcie okładki</h2>
+    <h2>Zdjęcie okładki</h2>
     <p>Zrób zdjęcie okładki — trafi do komputera jako okładka dodawanej pozycji.</p>
     <label class="bigbtn secondary" for="coverPhoto">Zrób zdjęcie okładki</label>
     <input type="file" id="coverPhoto" accept="image/*" capture="environment" />
@@ -148,24 +157,24 @@
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      show('busy', '⏳ Wysyłam zdjęcie i odczytuję kod…');
+      show('busy', 'Wysyłam zdjęcie i odczytuję kod…');
       try {
         const r = await upload('/api/photo', file, 2200);
         if (r.ok) {
-          show('ok', '✅ Odczytano kod ' + r.barcode + '. ' +
+          show('ok', 'Odczytano kod ' + r.barcode + '. ' +
             (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach — uzupełnij dane na komputerze.'));
         } else {
-          show('err', '❌ ' + r.message);
+          show('err', '' + r.message);
         }
       } catch (err) {
-        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+        show('err', 'Błąd połączenia z komputerem: ' + err.message);
       }
     });
 
     document.getElementById('sendManual').addEventListener('click', async () => {
       const code = document.getElementById('manualCode').value.replace(/\D/g, '');
-      if (code.length < 7) { show('err', '❌ Kod jest za krótki.'); return; }
-      show('busy', '⏳ Wyszukuję kod ' + code + '…');
+      if (code.length < 7) { show('err', 'Kod jest za krótki.'); return; }
+      show('busy', 'Wyszukuję kod ' + code + '…');
       try {
         const res = await fetch('/api/barcode', {
           method: 'POST',
@@ -175,13 +184,13 @@
         const r = await parse(res);
         if (r.ok) {
           document.getElementById('manualCode').value = '';
-          show('ok', '✅ Wysłano kod ' + r.barcode + '. ' +
+          show('ok', 'Wysłano kod ' + r.barcode + '. ' +
             (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach.'));
         } else {
-          show('err', '❌ ' + r.message);
+          show('err', '' + r.message);
         }
       } catch (err) {
-        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+        show('err', 'Błąd połączenia z komputerem: ' + err.message);
       }
     });
 
@@ -189,13 +198,13 @@
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      show('busy', '⏳ Wysyłam zdjęcie okładki…');
+      show('busy', 'Wysyłam zdjęcie okładki…');
       try {
         const r = await upload('/api/cover', file, 1600);
-        if (r.ok) show('ok', '✅ Okładka trafiła na komputer.');
-        else show('err', '❌ ' + r.message);
+        if (r.ok) show('ok', 'Okładka trafiła na komputer.');
+        else show('err', '' + r.message);
       } catch (err) {
-        show('err', '❌ Błąd połączenia z komputerem: ' + err.message);
+        show('err', 'Błąd połączenia z komputerem: ' + err.message);
       }
     });
   </script>

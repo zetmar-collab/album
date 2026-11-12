@@ -1,7 +1,10 @@
 'use strict';
 
 const FORMAT_LABEL = { vinyl: 'WINYL', cd: 'CD', cassette: 'KASETA' };
-const FORMAT_ICON = { vinyl: '💿', cd: '💿', cassette: '📼' };
+
+/** Ikona z zestawu SVG (sprite w index.html) - spójna na każdym systemie, w przeciwieństwie do emoji. */
+const icon = (name, cls) => '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+const FORMAT_ICON = { vinyl: icon('disc'), cd: icon('disc'), cassette: icon('cassette') };
 
 let allItems = [];
 let currentFormat = 'all';
@@ -27,8 +30,44 @@ function toast(msg, ms = 3500) {
   t._timer = setTimeout(() => t.classList.add('hidden'), ms);
 }
 
-function openModal(id) { $(id).classList.remove('hidden'); }
-function closeModal(id) { $(id).classList.add('hidden'); }
+let lastFocus = null;
+
+function openModal(id) {
+  lastFocus = document.activeElement;
+  $(id).classList.remove('hidden');
+  const box = $(id).querySelector('.modal');
+  if (box) {
+    box.tabIndex = -1;
+    box.focus({ preventScroll: true });
+  }
+}
+
+function closeModal(id) {
+  $(id).classList.add('hidden');
+  if (lastFocus && lastFocus.isConnected) {
+    try { lastFocus.focus({ preventScroll: true }); } catch (e) { /* element mógł zniknąć */ }
+  }
+}
+
+// Tab krąży wewnątrz otwartego okna zamiast uciekać do tła.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const open = [...document.querySelectorAll('.modal-backdrop:not(.hidden)')].pop();
+  if (!open) return;
+  const items = [...open.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter(
+    (el) => !el.disabled && el.offsetParent !== null
+  );
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && (document.activeElement === first || document.activeElement === open.querySelector('.modal'))) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 document.querySelectorAll('[data-close]').forEach((b) =>
   b.addEventListener('click', () => {
@@ -82,11 +121,33 @@ function render() {
   $('stats').textContent =
     allItems.length + ' pozycji · ' + counts.vinyl + ' winyli · ' + counts.cd + ' CD · ' + counts.cassette + ' kaset';
 
+  document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
+    const f = chip.dataset.format;
+    const n = chip.querySelector('.chip-count');
+    if (n) n.textContent = f === 'all' ? allItems.length : counts[f];
+  });
+
   const grid = $('grid');
   grid.innerHTML = '';
   grid.className = currentView === 'list' ? 'list' : 'grid';
   $('emptyState').classList.toggle('hidden', allItems.length > 0);
   const frag = document.createDocumentFragment();
+
+  if (currentView === 'list' && list.length) {
+    const head = document.createElement('div');
+    head.className = 'list-head';
+    head.setAttribute('aria-hidden', 'true');
+    head.innerHTML =
+      '<span></span><span>Wykonawca / tytuł</span><span>Format</span><span class="num">Rok</span>' +
+      '<span class="c-label">Wytwórnia</span><span class="c-cond">Stan</span><span></span>';
+    frag.appendChild(head);
+  }
+  if (!list.length && allItems.length) {
+    const none = document.createElement('div');
+    none.className = 'empty-inline';
+    none.textContent = 'Brak pozycji pasujących do wyszukiwania lub filtra.';
+    frag.appendChild(none);
+  }
 
   for (const item of list) {
     const el = document.createElement('div');
@@ -94,19 +155,19 @@ function render() {
       el.className = 'row';
       el.innerHTML =
         '<div class="row-cover">' +
-        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || '🎵') +
+        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || icon('music')) +
         '</div>' +
         '<div class="row-main"><div class="row-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
         '<div class="row-title">' + esc(item.title || '(bez tytułu)') + '</div></div>' +
         '<span class="badge badge-' + item.format + '">' + FORMAT_LABEL[item.format] + '</span>' +
-        '<span class="row-col">' + esc(item.year || '') + '</span>' +
-        '<span class="row-col row-label">' + esc(item.label || '') + '</span>' +
-        '<span class="row-col row-cond">' + esc(item.condition || '') + '</span>';
+        '<span class="row-col num">' + esc(item.year || '') + '</span>' +
+        '<span class="row-col c-label" title="' + esc(item.label || '') + '">' + esc(item.label || '') + '</span>' +
+        '<span class="row-col c-cond">' + esc(item.condition || '') + '</span>';
     } else {
       el.className = 'card';
       el.innerHTML =
         '<div class="card-cover">' +
-        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || '🎵') +
+        (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || icon('music')) +
         '</div>' +
         '<div class="card-info">' +
         '<div class="card-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
@@ -119,7 +180,7 @@ function render() {
     del.className = 'del-btn';
     del.title = 'Usuń z kolekcji';
     del.setAttribute('aria-label', 'Usuń z kolekcji');
-    del.textContent = '🗑';
+    del.innerHTML = icon('trash', 'ic-sm');
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm('Usunąć „' + (item.artist || '(nieznany)') + ' — ' + (item.title || '(bez tytułu)') + '" z kolekcji?')) return;
@@ -129,6 +190,7 @@ function render() {
     });
     el.appendChild(del);
     el.tabIndex = 0;
+    el.title = (item.artist || '(nieznany)') + ' — ' + (item.title || '(bez tytułu)');
     el.setAttribute('role', 'button');
     el.addEventListener('click', () => openEdit(item));
     el.addEventListener('keydown', (e) => {
@@ -244,7 +306,7 @@ function applyResult(r, intoNewItem) {
     const ta = $('fTracks');
     const prevPlaceholder = ta.placeholder;
     const startValue = ta.value;
-    ta.placeholder = '⏳ Pobieram listę utworów…';
+    ta.placeholder = 'Pobieram listę utworów…';
     window.api
       .fetchTracks({ source: r.source, sourceId: r.sourceId })
       .then((res) => {
@@ -299,7 +361,7 @@ function renderOnlineResults(results, errors, counts) {
     const row = document.createElement('div');
     row.className = 'online-result';
     row.innerHTML =
-      (r.coverUrl ? '<img src="' + esc(r.coverUrl) + '" alt="" />' : '<div class="noimg">♪</div>') +
+      (r.coverUrl ? '<img src="' + esc(r.coverUrl) + '" alt="" />' : '<div class="noimg">' + icon('music', 'ic-sm') + '</div>') +
       '<div class="or-main"><div class="or-title">' + esc(r.artist ? r.artist + ' — ' + r.title : r.title) + '</div>' +
       '<div class="or-sub">' + esc([r.year, r.formatText, r.label, r.country].filter(Boolean).join(' · ')) + '</div></div>' +
       '<span class="or-source">' + esc(r.source) + '</span>';
@@ -308,7 +370,7 @@ function renderOnlineResults(results, errors, counts) {
       thumb.addEventListener('error', () => {
         const ph = document.createElement('div');
         ph.className = 'noimg';
-        ph.textContent = '♪';
+        ph.innerHTML = icon('music', 'ic-sm');
         thumb.replaceWith(ph);
       });
     }
@@ -327,7 +389,7 @@ async function onlineSearch() {
   const btn = $('btnOnlineSearch');
   const seq = ++searchSeq;
   btn.disabled = true;
-  btn.textContent = 'Szukam…';
+  btn.querySelector('.lbl').textContent = 'Szukam…';
   try {
     const isBarcode = /^[0-9\s-]{7,16}$/.test(q);
     const res = await window.api.searchRemote(isBarcode ? { barcode: q.replace(/\D/g, '') } : { query: q });
@@ -336,7 +398,7 @@ async function onlineSearch() {
     toast('Błąd wyszukiwania: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔍 Szukaj';
+    btn.querySelector('.lbl').textContent = 'Szukaj';
   }
 }
 
@@ -522,6 +584,15 @@ async function openSettings() {
 // ---------- zdarzenia ----------
 
 $('btnAdd').addEventListener('click', () => openEdit(null));
+$('btnEmptyAdd').addEventListener('click', () => openEdit(null));
+$('btnCopyUrl').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('phoneUrl').textContent);
+    toast('Skopiowano adres do schowka.');
+  } catch (e) {
+    toast('Nie udało się skopiować — zaznacz adres i skopiuj ręcznie (Ctrl+C).');
+  }
+});
 $('btnPhone').addEventListener('click', openPhone);
 $('btnSettings').addEventListener('click', openSettings);
 $('btnSave').addEventListener('click', saveEdit);
@@ -576,12 +647,14 @@ $('btnStats').addEventListener('click', () => {
     sec.append(el('h3', null, title));
     const max = Math.max(...rows.map((r) => r.count));
     rows.forEach((r) => {
-      const row = el('div');
-      const line = el('div', 'stat-row');
-      line.append(el('span', null, r.name), el('b', null, String(r.count)));
+      const row = el('div', 'stat-row');
+      const name = el('span', 'stat-name', r.name);
+      name.title = r.name;
+      const track = el('div', 'stat-track');
       const bar = el('div', 'stat-bar');
       bar.style.width = Math.max(4, Math.round((r.count / max) * 100)) + '%';
-      row.append(line, bar);
+      track.append(bar);
+      row.append(name, track, el('b', 'stat-count', String(r.count)));
       sec.append(row);
     });
     body.append(sec);
