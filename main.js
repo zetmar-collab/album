@@ -13,6 +13,7 @@ const { readBackup, applyBackup, writeBackup } = require('./lib/backup');
 const { createLookup } = require('./lib/lookup');
 const { createPhoneApp } = require('./lib/phoneServer');
 const { sniffImage } = require('./lib/image');
+const { createBarcodeDecoder } = require('./lib/barcode');
 
 const PHONE_PORT = 8137;
 const PHONE_IDLE_MS = 15 * 60 * 1000;
@@ -188,15 +189,14 @@ function storePhoneCover(buf) {
 
 // ---------- odczyt kodu kreskowego ze zdjęcia ----------
 
-let zxingPromise = null;
 
 // W spakowanej aplikacji (asar) moduł nie znajduje sam pliku .wasm — wczytujemy go ręcznie.
 function resolveWasmPath() {
   const candidates = [
-    path.join(__dirname, 'node_modules', 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm'),
     process.resourcesPath
       ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')
-      : null
+      : null,
+    path.join(__dirname, 'node_modules', 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm')
   ].filter(Boolean);
   for (const c of candidates) {
     try {
@@ -208,26 +208,24 @@ function resolveWasmPath() {
   return null;
 }
 
-async function getZxing() {
-  if (!zxingPromise) {
-    zxingPromise = (async () => {
-      const mod = await import('zxing-wasm/reader');
-      const wasmPath = resolveWasmPath();
-      if (wasmPath) {
-        const buf = fs.readFileSync(wasmPath);
-        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-        mod.prepareZXingModule({ overrides: { wasmBinary: ab } });
-      }
-      return mod;
-    })();
-  }
-  return zxingPromise;
+// Dekodowanie kodów kreskowych odbywa się w osobnym wątku (lib/barcodeWorker.js). W spakowanej aplikacji
+// plik wątku i moduł WASM leżą poza archiwum asar (asarUnpack), bo wątek nie czyta z archiwum.
+let barcodeDecoder = null;
+
+function unpacked(p) {
+  const marker = 'app.asar' + path.sep;
+  const i = p.indexOf(marker);
+  return i === -1 ? p : p.slice(0, i) + 'app.asar.unpacked' + path.sep + p.slice(i + marker.length);
 }
 
-async function decodeBarcodesFromImage(buffer) {
-  const { readBarcodes } = await getZxing();
-  const results = await readBarcodes(new Uint8Array(buffer), { tryHarder: true, tryRotate: true, tryInvert: true });
-  return results.map((r) => r.text).filter((t) => t && /^[0-9]{7,14}$/.test(t.replace(/\s/g, '')));
+function decodeBarcodesFromImage(buffer) {
+  if (!barcodeDecoder) {
+    barcodeDecoder = createBarcodeDecoder({
+      wasmPath: resolveWasmPath(),
+      workerFile: unpacked(path.join(__dirname, 'lib', 'barcodeWorker.js'))
+    });
+  }
+  return barcodeDecoder.decode(buffer);
 }
 
 // ---------- serwer dla telefonu (uruchamiany na żądanie, z tokenem sesji) ----------
@@ -653,6 +651,7 @@ if (!gotLock) {
 
   app.on('window-all-closed', () => {
     stopPhoneServer();
+    if (barcodeDecoder) barcodeDecoder.close();
     app.quit();
   });
 }

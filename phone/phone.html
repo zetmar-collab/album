@@ -104,10 +104,10 @@
   <script>
     'use strict';
     const status = document.getElementById('status');
-    // Token sesji jest w ciasteczku HttpOnly ustawionym po wejściu z kodu QR - przeglądarka dołącza je sama.
-    // Nagłówek zostaje jako zapasowy sposób (gdyby adres jeszcze zawierał ?t=).
-    const TOKEN = new URLSearchParams(location.search).get('t') || '';
-    const AUTH = TOKEN ? { 'X-Album-Token': TOKEN } : {};
+    // Token sesji podstawia komputer przy wczytaniu strony (po zeskanowaniu kodu QR); wszystkie zapytania
+    // do API wysyłają go w nagłówku.
+    const TOKEN = '__ALBUM_TOKEN__';
+    const AUTH = { 'X-Album-Token': TOKEN };
 
     function show(cls, msg) {
       status.className = cls;

@@ -33,7 +33,8 @@
       "package.json"
     ],
     "asarUnpack": [
-      "node_modules/zxing-wasm/**"
+      "node_modules/zxing-wasm/**",
+      "lib/barcodeWorker.js"
     ],
     "win": {
       "target": [

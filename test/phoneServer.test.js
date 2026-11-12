@@ -13,7 +13,7 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 async function start(overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'album-phone-'));
   const pageFile = path.join(dir, 'phone.html');
-  fs.writeFileSync(pageFile, '<html>strona telefonu</html>');
+  fs.writeFileSync(pageFile, "<html>strona telefonu <script>const TOKEN='__ALBUM_TOKEN__';</script></html>");
   const calls = { barcodes: [], covers: [], activity: 0 };
   const app = createPhoneApp({
     token: TOKEN,
@@ -56,14 +56,17 @@ test('strona i API odmawiają dostępu bez tokenu (S1)', async () => {
     const pair = cookie.split(';')[0];
     assert.equal((await fetch(s.base + '/', { headers: { cookie: pair } })).status, 200);
     assert.equal((await fetch(s.base + '/', { headers: { cookie: 'album_t=' + 'b'.repeat(32) } })).status, 403);
-    // API przyjmuje też samo ciasteczko (bez nagłówka)
+    // strona dostaje token jako zmienną, a samo ciasteczko NIE wystarcza do API (ochrona przed żądaniami z innych portów)
+    const page = await (await fetch(s.base + '/', { headers: { cookie: pair } })).text();
+    assert.ok(page.includes("const TOKEN='" + TOKEN + "'"), 'token podstawiony do strony');
+    assert.ok(!page.includes('__ALBUM_TOKEN__'));
     const viaCookie = await fetch(s.base + '/api/barcode', { method: 'POST', headers: { cookie: pair, 'content-type': 'application/json' }, body: '{"barcode":"5099749534728"}' });
-    assert.equal(viaCookie.status, 200);
+    assert.equal(viaCookie.status, 403);
     const r = await fetch(s.base + '/api/barcode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"barcode":"5099749534728"}' });
     assert.equal(r.status, 403);
     const c = await fetch(s.base + '/api/cover', { method: 'POST', body: form(PNG) });
     assert.equal(c.status, 403);
-    assert.equal(s.calls.barcodes.length, 1, 'tylko wywołanie z ciasteczkiem dotarło do wyszukiwania');
+    assert.equal(s.calls.barcodes.length, 0);
     assert.equal(s.calls.covers.length, 0);
   } finally {
     await s.close();
