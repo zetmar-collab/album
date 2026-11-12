@@ -26,6 +26,10 @@ Dane kolekcji są zapisywane w profilu użytkownika (Windows: `%APPDATA%\Album\a
 - Telefon robi zdjęcie **kodu kreskowego** → komputer odczytuje kod i pobiera dane wydania z **MusicBrainz** i **Discogs** (wykonawca, tytuł, rok, wytwórnia, nr katalogowy, okładka)
 - Telefon może też wysłać **zdjęcie okładki**, które zostanie przypisane do dodawanej pozycji
 - Wyszukiwanie, filtrowanie po formacie, sortowanie, stan nośnika, notatki
+- **Tryb serii** (okno „Skanuj telefonem”): kolejne zeskanowane kody są zapisywane automatycznie (pierwszy wynik, z okładką i listą utworów), duplikaty są pomijane — wygodne przy dodawaniu większej partii płyt
+- **Wykrywanie duplikatów** po kodzie kreskowym oraz po wykonawcy, tytule i formacie
+- **Statystyki** kolekcji (📈): liczba pozycji wg formatu, dekady, najczęstsi wykonawcy i wytwórnie
+- **Konserwacja**: czyszczenie nieużywanych okładek (Ustawienia) — po potwierdzeniu, do Kosza
 - **Kopia zapasowa**: eksport i przywracanie całej kolekcji wraz z okładkami (plik ZIP) — Ustawienia ⚙. Przy przywracaniu poprzednia wersja kolekcji zostaje zapisana jako `collection.json.bak`.
 - Zapis danych jest atomowy; uszkodzony plik kolekcji nie jest po cichu nadpisywany — aplikacja przywraca ostatnią poprawną wersję i informuje o tym w oknie dialogowym.
 

@@ -19,6 +19,7 @@
     <div class="topbar-actions">
       <button id="btnAdd" class="btn btn-primary">＋ Dodaj</button>
       <button id="btnPhone" class="btn">📱 Skanuj telefonem</button>
+      <button id="btnStats" class="btn btn-icon" title="Statystyki kolekcji" aria-label="Statystyki kolekcji">📈</button>
       <button id="btnSettings" class="btn btn-icon" title="Ustawienia i kopia zapasowa" aria-label="Ustawienia i kopia zapasowa">⚙</button>
     </div>
   </header>
@@ -133,6 +134,7 @@
           2. Upewnij się, że telefon jest w tej samej sieci Wi‑Fi (nie w sieci gościnnej i nie na danych komórkowych).<br/>
           3. Jeśli nadal nie działa, w ustawieniach routera wyłącz „izolację klientów" (AP isolation).</p>
         <p class="hint">Połączenie jest chronione jednorazowym kodem z adresu (QR) i wygasa po <span id="phoneIdle">15</span> min bezczynności albo po kliknięciu „Zakończ połączenie".</p>
+        <label class="batch-label"><input type="checkbox" id="batchMode" /> <b>Tryb serii</b> — zapisuj automatycznie pierwszy znaleziony wynik (bez otwierania formularza); duplikaty są pomijane</label>
         <div class="backup-buttons"><button id="btnPhoneStop" class="btn">⏹ Zakończ połączenie</button></div>
         <div id="phoneLog" class="phone-log" aria-live="polite"></div>
       </div>
@@ -166,6 +168,10 @@
           <button id="btnImport" class="btn">⬆ Przywróć z kopii…</button>
         </div>
         <hr/>
+        <h3>Konserwacja</h3>
+        <p class="hint" id="orphanInfo">Okładki, do których nie odwołuje się żadna pozycja, zajmują miejsce na dysku.</p>
+        <button id="btnOrphans" class="btn">🧹 Wyczyść nieużywane okładki…</button>
+        <hr/>
         <h3>Eksport</h3>
         <p class="hint">Zapisuje całą kolekcję jako arkusz Excel (.xlsx).</p>
         <button id="btnExcel" class="btn">📊 Eksportuj do Excela…</button>
@@ -173,8 +179,21 @@
     </div>
   </div>
 
+  <!-- Modal: statystyki -->
+  <div class="modal-backdrop hidden" id="statsModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+      <div class="modal-head">
+        <h2 id="statsTitle">Statystyki kolekcji</h2>
+        <button class="btn btn-icon modal-close" data-close="statsModal" aria-label="Zamknij">✕</button>
+      </div>
+      <div class="modal-body" id="statsBody"></div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
+  <script src="dedupe.js"></script>
+  <script src="stats.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

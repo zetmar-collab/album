@@ -37,15 +37,8 @@ document.querySelectorAll('[data-close]').forEach((b) =>
   })
 );
 
-// Wyszukiwanie bez rozróżniania wielkości liter i polskich znaków (ł, ą, ę…).
-function norm(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/ł/g, 'l')
-    .replace(/đ/g, 'd')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
+// Wyszukiwanie bez rozróżniania wielkości liter i polskich znaków (ł, ą, ę…) - patrz dedupe.js.
+const { norm, findDuplicate } = window.AlbumDedupe;
 
 function esc(s) {
   return String(s || '').replace(/[&<>"']/g, (c) =>
@@ -366,8 +359,12 @@ async function saveEdit() {
     toast('Podaj przynajmniej wykonawcę lub tytuł.');
     return;
   }
-  if (!item.id && item.barcode && allItems.some((i) => i.barcode && i.barcode === item.barcode)) {
-    if (!confirm('Pozycja z tym kodem kreskowym już jest w kolekcji. Dodać mimo to?')) return;
+  if (!item.id) {
+    const dup = findDuplicate(allItems, item);
+    if (dup) {
+      const what = dup.reason === 'barcode' ? 'Pozycja z tym kodem kreskowym' : 'Podobna pozycja (ten sam wykonawca, tytuł i format)';
+      if (!confirm(what + ' już jest w kolekcji: „' + (dup.item.artist || '?') + ' — ' + (dup.item.title || '?') + '”. Dodać mimo to?')) return;
+    }
   }
   const btn = $('btnSave');
   btn.disabled = true;
@@ -407,9 +404,57 @@ async function openPhone() {
   openModal('phoneModal');
 }
 
+// ---------- tryb serii (telefon) ----------
+
+let batchQueue = Promise.resolve();
+
+/** Zapisuje pierwszy wynik wyszukiwania bez otwierania formularza. Duplikaty pomija. */
+async function handleBatchScan(data) {
+  const r = data.results[0];
+  if (!r) {
+    phoneLog('✖ Kod ' + data.barcode + ': brak wyników — dodaj tę pozycję ręcznie.');
+    return;
+  }
+  const cand = {
+    format: guessFormat(r.formatText) || 'vinyl',
+    artist: r.artist,
+    title: r.title,
+    year: r.year,
+    label: r.label,
+    catalogNumber: r.catalogNumber,
+    barcode: r.barcode || data.barcode,
+    genre: r.genre || '',
+    country: r.country,
+    source: r.source,
+    sourceId: r.sourceId
+  };
+  const name = (cand.artist || '?') + ' — ' + (cand.title || '?');
+  const dup = findDuplicate(allItems, cand);
+  if (dup) {
+    phoneLog('⏭ Pominięto duplikat: ' + name);
+    return;
+  }
+  try {
+    let tracklist = '';
+    if (r.sourceId) {
+      const t = await window.api.fetchTracks({ source: r.source, sourceId: r.sourceId });
+      if (t && t.text) tracklist = t.text;
+    }
+    await window.api.saveItem(Object.assign({ id: null, tracklist, notes: '', condition: '', coverFile: null, newCoverUrl: r.coverUrl || null }, cand));
+    await refresh();
+    phoneLog('✔ Dodano: ' + name);
+  } catch (e) {
+    phoneLog('✖ Błąd zapisu (' + name + '): ' + e.message);
+  }
+}
+
 window.api.onPhoneEvent((data) => {
   if (data.type === 'barcode') {
     phoneLog('Odebrano kod ' + data.barcode + ' — znaleziono wyników: ' + data.results.length);
+    if ($('batchMode').checked && $('editModal').classList.contains('hidden')) {
+      batchQueue = batchQueue.then(() => handleBatchScan(data));
+      return;
+    }
     closeModal('phoneModal');
     if (!$('editModal').classList.contains('hidden')) {
       // Użytkownik właśnie edytuje pozycję - nie nadpisujemy formularza. Wyniki pokazujemy na liście do wyboru.
@@ -471,6 +516,7 @@ async function openSettings() {
   $('discogsToken').value = s.discogsToken || '';
   openModal('settingsModal');
   refreshDiscogsStatus();
+  refreshOrphanInfo();
 }
 
 // ---------- zdarzenia ----------
@@ -505,6 +551,46 @@ $('btnClearCover').addEventListener('click', () => {
   editingItem.coverFile = null;
   editingItem.newCoverUrl = null;
   setCoverPreview(null);
+});
+
+$('btnStats').addEventListener('click', () => {
+  const s = window.AlbumStats.computeStats(allItems);
+  const body = $('statsBody');
+  body.textContent = '';
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  const grid = el('div', 'stat-grid');
+  [['Razem', s.total], ['Winyle', s.byFormat.vinyl], ['CD', s.byFormat.cd], ['Kasety', s.byFormat.cassette], ['Z okładką', s.withCover], ['Z listą utworów', s.withTracklist]].forEach(([label, n]) => {
+    const c = el('div', 'stat-card');
+    c.append(el('div', 'stat-num', String(n)), el('div', 'stat-label', label));
+    grid.append(c);
+  });
+  body.append(grid);
+  const section = (title, rows) => {
+    if (!rows.length) return;
+    const sec = el('div', 'stat-section');
+    sec.append(el('h3', null, title));
+    const max = Math.max(...rows.map((r) => r.count));
+    rows.forEach((r) => {
+      const row = el('div');
+      const line = el('div', 'stat-row');
+      line.append(el('span', null, r.name), el('b', null, String(r.count)));
+      const bar = el('div', 'stat-bar');
+      bar.style.width = Math.max(4, Math.round((r.count / max) * 100)) + '%';
+      row.append(line, bar);
+      sec.append(row);
+    });
+    body.append(sec);
+  };
+  section('Dekady', s.byDecade);
+  section('Najczęstsi wykonawcy', s.topArtists);
+  section('Najczęstsze wytwórnie', s.topLabels);
+  if (!s.total) body.append(el('p', 'hint', 'Kolekcja jest pusta — nie ma jeszcze czego policzyć.'));
+  openModal('statsModal');
 });
 
 $('btnPhoneStop').addEventListener('click', async () => {
@@ -549,6 +635,21 @@ $('btnImport').addEventListener('click', async () => {
   }
 });
 
+$('btnOrphans').addEventListener('click', async () => {
+  const r = await window.api.coverCleanup();
+  if (r.canceled) return;
+  if (!r.removed && !r.failed) toast('Nie ma nieużywanych okładek.');
+  else toast('Przeniesiono do Kosza: ' + r.removed + ' okładek' + (r.failed ? ' (nie udało się: ' + r.failed + ')' : '') + '.', 6000);
+  refreshOrphanInfo();
+});
+
+async function refreshOrphanInfo() {
+  const o = await window.api.coverOrphans();
+  $('orphanInfo').textContent = o.count
+    ? 'Nieużywane okładki: ' + o.count + ' (' + (o.bytes / 1048576).toFixed(1) + ' MB).'
+    : 'Brak nieużywanych okładek.';
+}
+
 $('btnExcel').addEventListener('click', async () => {
   const r = await window.api.exportExcel();
   if (r.ok) toast('Wyeksportowano ' + r.count + ' pozycji do: ' + r.path, 6000);
@@ -588,7 +689,8 @@ document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     // Zamykamy tylko wierzchnie okno; edycja z niezapisanymi zmianami pyta o potwierdzenie.
-    if (!$('settingsModal').classList.contains('hidden')) closeModal('settingsModal');
+    if (!$('statsModal').classList.contains('hidden')) closeModal('statsModal');
+    else if (!$('settingsModal').classList.contains('hidden')) closeModal('settingsModal');
     else if (!$('phoneModal').classList.contains('hidden')) closeModal('phoneModal');
     else requestCloseEdit();
   }

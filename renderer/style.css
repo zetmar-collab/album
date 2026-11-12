@@ -392,3 +392,11 @@ button:focus-visible, .chip:focus-visible, select:focus-visible, input:focus-vis
 .card:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card, .row { cursor: pointer; }
 .btn-inline { margin-left: 8px; }
+.batch-label { display: block; margin: 12px 0 8px; font-size: 13px; line-height: 1.4; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.stat-card { background: #262933; border-radius: 10px; padding: 10px; text-align: center; }
+.stat-num { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 12px; color: var(--muted); }
+.stat-section h3 { margin: 14px 0 6px; font-size: 14px; }
+.stat-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; }
+.stat-bar { height: 6px; border-radius: 3px; background: var(--accent); margin-top: 2px; }

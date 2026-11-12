@@ -14,6 +14,7 @@ const { createLookup } = require('./lib/lookup');
 const { createPhoneApp } = require('./lib/phoneServer');
 const { sniffImage } = require('./lib/image');
 const { createBarcodeDecoder } = require('./lib/barcode');
+const { findOrphanCovers } = require('./lib/orphans');
 
 const PHONE_PORT = 8137;
 const PHONE_IDLE_MS = 15 * 60 * 1000;
@@ -490,6 +491,39 @@ function setupIpc() {
   ipcMain.handle('phone:stop', () => {
     stopPhoneServer('zakończono ręcznie');
     return true;
+  });
+
+  // Konserwacja: okładki, do których nic nie się nie odwołuje. Usuwanie tylko po potwierdzeniu i do Kosza.
+  ipcMain.handle('covers:orphans', () => {
+    const list = findOrphanCovers(coversDir, items, sessionCovers);
+    return { count: list.length, bytes: list.reduce((n, o) => n + o.size, 0) };
+  });
+
+  ipcMain.handle('covers:cleanup', async () => {
+    const list = findOrphanCovers(coversDir, items, sessionCovers);
+    if (!list.length) return { ok: true, removed: 0, failed: 0 };
+    const mb = (list.reduce((n, o) => n + o.size, 0) / 1048576).toFixed(1);
+    const ask = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Przenieś do Kosza', 'Anuluj'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Nieużywane okładki',
+      message: 'Znaleziono nieużywanych okładek: ' + list.length + ' (' + mb + ' MB)',
+      detail: 'Do tych plików nie odwołuje się żadna pozycja kolekcji. Zostaną przeniesione do Kosza, więc możesz je przywrócić.'
+    });
+    if (ask.response !== 0) return { ok: false, canceled: true };
+    let removed = 0;
+    let failed = 0;
+    for (const o of list) {
+      try {
+        await shell.trashItem(path.join(coversDir, o.name));
+        removed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { ok: true, removed, failed };
   });
 
   ipcMain.handle('export:excel', async () => {

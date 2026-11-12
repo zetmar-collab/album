@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('api', {
   phoneInfo: () => ipcRenderer.invoke('phone:info'),
   phoneStop: () => ipcRenderer.invoke('phone:stop'),
   exportBackup: () => ipcRenderer.invoke('backup:export'),
+  coverOrphans: () => ipcRenderer.invoke('covers:orphans'),
+  coverCleanup: () => ipcRenderer.invoke('covers:cleanup'),
   exportExcel: () => ipcRenderer.invoke('export:excel'),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   onPhoneEvent: (cb) => ipcRenderer.on('phone-event', (ev, data) => cb(data)),
