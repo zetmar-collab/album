@@ -258,6 +258,16 @@ class StoreTest {
   }
 
   @Test
+  fun coverHostsAreRestricted() {
+    assertTrue(Lookup.coverHostAllowed("https://coverartarchive.org/release/1/front-500"))
+    assertTrue(Lookup.coverHostAllowed("https://i.discogs.com/a.jpg"))
+    assertFalse(Lookup.coverHostAllowed("http://coverartarchive.org/x.jpg"))
+    assertFalse(Lookup.coverHostAllowed("https://notdiscogs.com/x.jpg"))
+    assertFalse(Lookup.coverHostAllowed("https://192.168.0.1/x.jpg"))
+    assertFalse(Lookup.coverHostAllowed("nie url"))
+  }
+
+  @Test
   fun barcodeVariants() {
     assertEquals(listOf("724384260958", "0724384260958"), Lookup.barcodeVariants("724384260958"))
     assertEquals(listOf("0724384260958", "724384260958"), Lookup.barcodeVariants("0724384260958"))

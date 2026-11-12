@@ -265,13 +265,25 @@ object Lookup {
       }
     }
 
+  private val coverHosts = listOf("coverartarchive.org", "archive.org", "discogs.com")
+
+  /** Okladki pobieramy tylko po https i tylko z serwisow, z ktorych pochodza wyniki wyszukiwania. */
+  fun coverHostAllowed(url: String): Boolean =
+    runCatching {
+      val u = URL(url)
+      val h = u.host.lowercase()
+      u.protocol == "https" && coverHosts.any { h == it || h.endsWith(".$it") }
+    }.getOrDefault(false)
+
   /** Pobiera okladke do `target`; zwraca true przy sukcesie. */
   suspend fun downloadCover(url: String, target: File): Boolean =
     withContext(Dispatchers.IO) {
       runCatching {
+        if (!coverHostAllowed(url)) return@runCatching false
         val c = open(url)
         try {
           if (c.responseCode !in 200..299) return@runCatching false
+          if (!coverHostAllowed(c.url.toString())) return@runCatching false // przekierowanie na obcy host
           if (c.contentLengthLong > Store.MAX_COVER_BYTES) return@runCatching false
           val bytes = c.inputStream.use { it.readBytes() }
           if (bytes.size < 100 || bytes.size > Store.MAX_COVER_BYTES || !Store.looksLikeImage(bytes)) return@runCatching false
@@ -286,9 +298,10 @@ object Lookup {
   /** Do podgladu miniatur z internetu. */
   fun fetchBytes(url: String): ByteArray? =
     runCatching {
+      if (!coverHostAllowed(url)) return@runCatching null
       val c = open(url)
       try {
-        if (c.responseCode !in 200..299) null else c.inputStream.use { it.readBytes() }
+        if (c.responseCode !in 200..299 || !coverHostAllowed(c.url.toString())) null else c.inputStream.use { Store.readLimited(it, Store.MAX_COVER_BYTES) }
       } finally {
         c.disconnect()
       }

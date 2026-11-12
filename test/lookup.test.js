@@ -134,10 +134,32 @@ test('fetchTracklist MusicBrainz formatuje utwory i czasy', async () => {
   assert.equal(r.text, '1. Revolution 909 (5:25)\n2. Da Funk (5:28)');
 });
 
+test('downloadImage: tylko https i tylko dozwolone serwisy (także po przekierowaniu)', async () => {
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(300, 1)]);
+  const ok = (finalUrl) => ({ ok: true, status: 200, url: finalUrl, headers: headers({}), arrayBuffer: async () => png });
+  const calls = [];
+  const lk = createLookup({
+    getToken: () => '',
+    userAgent: 't',
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      return ok(String(url).includes('redirect') ? 'https://evil.example/x.png' : String(url));
+    }
+  });
+  assert.ok(await lk.downloadImage('https://coverartarchive.org/release/1/front-500'));
+  assert.ok(await lk.downloadImage('https://i.discogs.com/abc.jpg'));
+  assert.equal(await lk.downloadImage('http://coverartarchive.org/x.jpg'), null, 'http odrzucone');
+  assert.equal(await lk.downloadImage('https://evil.example/x.jpg'), null, 'obcy host odrzucony');
+  assert.equal(await lk.downloadImage('https://notdiscogs.com/x.jpg'), null, 'podobna domena odrzucona');
+  assert.equal(await lk.downloadImage('http://192.168.0.1/x.jpg'), null, 'adres lokalny odrzucony');
+  assert.equal(await lk.downloadImage('https://archive.org/redirect.jpg'), null, 'przekierowanie na obcy host odrzucone');
+  assert.ok(!calls.some((c) => c.includes('192.168') || c.startsWith('http://') || c.includes('notdiscogs')), 'zapytania nie wychodzą do niedozwolonych adresów');
+});
+
 test('downloadImage odrzuca protokoły inne niż http(s) i zbyt duże pliki', async () => {
   const big = { ok: true, status: 200, headers: headers({ 'content-length': '99999999' }), arrayBuffer: async () => new ArrayBuffer(10) };
   const lk = createLookup({ getToken: () => '', userAgent: 't', fetchImpl: async () => big });
   assert.equal(await lk.downloadImage('file:///etc/passwd'), null);
   assert.equal(await lk.downloadImage('to nie url'), null);
-  assert.equal(await lk.downloadImage('https://x/y.jpg'), null);
+  assert.equal(await lk.downloadImage('https://i.discogs.com/y.jpg'), null);
 });
