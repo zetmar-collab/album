@@ -31,4 +31,4 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew testDebugUnitTest --console=plain
+      - run: ./gradlew testDebugUnitTest lintDebug --console=plain

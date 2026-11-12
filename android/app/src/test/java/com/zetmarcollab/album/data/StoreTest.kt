@@ -188,6 +188,48 @@ class StoreTest {
     assertFalse(Store.looksLikeImage(ByteArray(0)))
   }
 
+  /** Atrapa szyfru: odwraca tekst i dodaje prefiks, zeby jawny token nie trafil do pliku. */
+  private class FakeBox : SecretBox {
+    override fun encrypt(plain: String) = "enc:" + plain.reversed()
+
+    override fun decrypt(cipher: String) = cipher.removePrefix("enc:").reversed()
+  }
+
+  @Test
+  fun tokenIsEncryptedAtRestWhenSecretBoxIsPresent() {
+    val dir = File(root, "enc").apply { mkdirs() }
+    val s1 = Store(dir, FakeBox())
+    s1.saveToken("SEKRETNY-TOKEN")
+    val text = File(dir, "settings.json").readText()
+    assertFalse(text.contains("SEKRETNY-TOKEN"))
+    assertTrue(text.contains("discogsTokenEnc"))
+    assertEquals("SEKRETNY-TOKEN", Store(dir, FakeBox()).discogsToken)
+  }
+
+  @Test
+  fun plaintextTokenIsMigratedToEncrypted() {
+    val dir = File(root, "mig").apply { mkdirs() }
+    File(dir, "settings.json").writeText("""{"discogsToken":"STARY-JAWNY"}""")
+    val s = Store(dir, FakeBox())
+    assertEquals("STARY-JAWNY", s.discogsToken)
+    val text = File(dir, "settings.json").readText()
+    assertFalse(text.contains("STARY-JAWNY"))
+    assertTrue(text.contains("discogsTokenEnc"))
+  }
+
+  @Test
+  fun undecryptableTokenFallsBackToEmpty() {
+    val dir = File(root, "bad").apply { mkdirs() }
+    File(dir, "settings.json").writeText("""{"discogsTokenEnc":"cokolwiek"}""")
+    val broken =
+      object : SecretBox {
+        override fun encrypt(plain: String) = plain
+
+        override fun decrypt(cipher: String): String = error("klucz utracony")
+      }
+    assertEquals("", Store(dir, broken).discogsToken)
+  }
+
   @Test
   fun rejectsNonBackupZip() {
     val bad = File(root, "bad.zip")

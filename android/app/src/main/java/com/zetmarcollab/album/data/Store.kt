@@ -11,6 +11,13 @@ import java.util.zip.ZipOutputStream
 
 enum class ImportMode { REPLACE, MERGE }
 
+/** Szyfrowanie sekretow w spoczynku. Na Androidzie realizuje je Keystore; w testach mozna podstawic atrape. */
+interface SecretBox {
+  fun encrypt(plain: String): String
+
+  fun decrypt(cipher: String): String
+}
+
 /** Wynik wczytania pliku kolekcji przy starcie - pozwala pokazac uzytkownikowi, ze cos poszlo nie tak. */
 enum class LoadStatus { OK, MISSING, RESTORED, CORRUPT }
 
@@ -30,7 +37,7 @@ data class ImportResult(val added: Int, val skipped: Int, val total: Int)
  * `collection.json.bak`. Uszkodzony plik nie jest po cichu zastepowany pusta lista: trafia do
  * `collection.json.corrupt-<czas>`, a dane odzyskujemy z `.bak`.
  */
-class Store(private val dataDir: File) {
+class Store(private val dataDir: File, private val secretBox: SecretBox? = null) {
   private val coversDir = File(dataDir, "covers")
   private val dataFile = File(dataDir, "collection.json")
   private val backupFile = File(dataDir, "collection.json.bak")
@@ -79,7 +86,26 @@ class Store(private val dataDir: File) {
         }
       }
     }
-    discogsToken = runCatching { JSONObject(settingsFile.readText()).optString("discogsToken", "") }.getOrDefault("")
+    loadToken()
+  }
+
+  /**
+   * Token Discogs: przy dostepnym `secretBox` (Android Keystore) zapisywany jest tylko w postaci zaszyfrowanej
+   * (`discogsTokenEnc`); stary jawny zapis jest przy okazji migrowany. Bez `secretBox` (testy, desktopowy format)
+   * zostaje `discogsToken` jak dotad.
+   */
+  private fun loadToken() {
+    val o = runCatching { JSONObject(settingsFile.readText()) }.getOrNull()
+    if (o == null) {
+      discogsToken = ""
+      return
+    }
+    val enc = o.optString("discogsTokenEnc", "")
+    val box = secretBox
+    discogsToken =
+      if (enc.isNotEmpty() && box != null) runCatching { box.decrypt(enc) }.getOrDefault("")
+      else o.optString("discogsToken", "")
+    if (box != null && o.has("discogsToken") && discogsToken.isNotBlank()) runCatching { saveToken(discogsToken) }
   }
 
   private fun writeAtomic(target: File, text: String, keepPrevious: File? = null) {
@@ -96,7 +122,13 @@ class Store(private val dataDir: File) {
 
   fun saveToken(token: String) {
     discogsToken = token.trim()
-    writeAtomic(settingsFile, JSONObject().put("discogsToken", discogsToken).toString(2))
+    val json = JSONObject()
+    val box = secretBox
+    when {
+      box == null -> json.put("discogsToken", discogsToken)
+      discogsToken.isNotEmpty() -> json.put("discogsTokenEnc", box.encrypt(discogsToken))
+    }
+    writeAtomic(settingsFile, json.toString(2))
   }
 
   // ---------- pozycje ----------

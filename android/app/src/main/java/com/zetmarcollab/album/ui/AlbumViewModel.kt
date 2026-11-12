@@ -16,6 +16,7 @@ import com.zetmarcollab.album.data.Item
 import com.zetmarcollab.album.data.Lookup
 import com.zetmarcollab.album.data.RemoteResult
 import com.zetmarcollab.album.data.SearchOutcome
+import com.zetmarcollab.album.data.KeystoreSecretBox
 import com.zetmarcollab.album.data.Store
 import com.zetmarcollab.album.data.LoadStatus
 import kotlinx.coroutines.CancellationException
@@ -54,7 +55,7 @@ sealed interface TokenStatus {
 }
 
 class AlbumViewModel(app: Application) : AndroidViewModel(app) {
-  private val store = Store(File(app.filesDir, "album-data"))
+  private val store = Store(File(app.filesDir, "album-data"), KeystoreSecretBox())
   private val prefs = app.getSharedPreferences("album", Context.MODE_PRIVATE)
   private val lock = Mutex()
 

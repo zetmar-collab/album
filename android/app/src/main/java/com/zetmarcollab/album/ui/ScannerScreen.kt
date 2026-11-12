@@ -131,7 +131,7 @@ fun ScannerScreen(vm: AlbumViewModel) {
   }
 }
 
-@OptIn(ExperimentalGetImage::class)
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 @Composable
 private fun CameraPreview(torchOn: Boolean, active: Boolean, onCode: (String) -> Unit) {
   val lifecycleOwner = LocalLifecycleOwner.current
