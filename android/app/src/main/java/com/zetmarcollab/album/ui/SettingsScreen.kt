@@ -105,7 +105,7 @@ fun SettingsScreen(vm: AlbumViewModel, onExportFile: () -> Unit, onShare: () -> 
       )
 
       HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline)
-      Text("Album 1.2.0 · dane są przechowywane tylko na tym urządzeniu.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text("Album 1.3.0 · dane są przechowywane tylko na tym urządzeniu.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 

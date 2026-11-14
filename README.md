@@ -11,12 +11,12 @@ Alternatywnie: gotowe pliki `.exe`/`.AppImage`/`.deb` pobierzesz z [Releases](ht
 ## Pliki wydania (folder `dist`)
 
 **Windows**
-- **Album-1.2.0-portable.exe** — wersja przenośna, uruchamiasz bezpośrednio, bez instalacji
-- **Album-1.2.0-instalator.exe** — klasyczny instalator (skrót w menu Start)
+- **Album-1.3.0-portable.exe** — wersja przenośna, uruchamiasz bezpośrednio, bez instalacji
+- **Album-1.3.0-instalator.exe** — klasyczny instalator (skrót w menu Start)
 
 **Linux**
-- **Album-1.2.0-x86_64.AppImage** — wersja przenośna, `chmod +x` i uruchom bezpośrednio, działa na większości dystrybucji bez instalacji
-- **Album-1.2.0-amd64.deb** — pakiet dla Ubuntu/Debian i pochodnych (`sudo apt install ./Album-1.2.0-amd64.deb`)
+- **Album-1.3.0-x86_64.AppImage** — wersja przenośna, `chmod +x` i uruchom bezpośrednio, działa na większości dystrybucji bez instalacji
+- **Album-1.3.0-amd64.deb** — pakiet dla Ubuntu/Debian i pochodnych (`sudo apt install ./Album-1.3.0-amd64.deb`)
 
 Dane kolekcji są zapisywane w profilu użytkownika (Windows: `%APPDATA%\Album\album-data`, Linux: `~/.config/album/album-data`), więc nie znikają po aktualizacji aplikacji.
 

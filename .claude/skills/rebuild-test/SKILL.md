@@ -24,7 +24,7 @@ Repeats the manual cycle used throughout development: stop the running instance,
 
 3. **Launch the portable build**:
    ```powershell
-   Start-Process "%CD%\dist\Album-1.2.0-portable.exe"
+   Start-Process "%CD%\dist\Album-1.3.0-portable.exe"
    ```
    (Match the actual version in `dist/` — check `package.json` version if unsure.)
 
