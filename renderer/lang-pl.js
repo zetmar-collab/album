@@ -2,6 +2,19 @@
 
 (function (root) {
   const entries = {
+    // --- wycena ---
+    'value.title': 'Wartość rynkowa (orientacyjnie)',
+    'value.summary': '≈ {total} {currency}',
+    'value.basis': 'na podstawie najniższych ofert na Discogs dla {counted} z {owned} pozycji',
+    'value.none': 'Brak wycen — kliknij „Odśwież wyceny”. Wycenić można pozycje pobrane z Discogs (wyszukiwanie lub import).',
+    'value.disclaimer': 'To najniższa cena ofert, a nie cena transakcyjna; stan nośnika nie jest uwzględniany.',
+    'value.refresh': 'Odśwież wyceny',
+    'value.stop': 'Zatrzymaj',
+    'value.progress': 'Pobieram ceny… {done}/{total}',
+    'value.done': 'Wyceny odświeżone.',
+    'value.noToken': 'Wycena wymaga tokenu Discogs (Ustawienia).',
+    'value.error': 'Błąd wyceny: {message}',
+    'value.currency': 'Waluta',
     // --- import ---
     'common.cancel': 'Anuluj',
     'import.section': 'Import kolekcji',

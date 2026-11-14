@@ -684,6 +684,52 @@ $('btnClearCover').addEventListener('click', () => {
   setCoverPreview(null);
 });
 
+/** Blok „Wartość rynkowa”: suma z zapamiętanych wycen + odświeżanie (postęp, zatrzymanie, waluta). */
+function buildValueBox(el) {
+  const box = el('div', 'value-box');
+  box.append(el('h3', null, t('value.title')));
+  const total = el('div', 'value-total');
+  const basis = el('div', 'hint');
+  const row = el('div', 'value-row');
+  const cur = document.createElement('select');
+  cur.setAttribute('aria-label', t('value.currency'));
+  ['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'AUD', 'JPY', 'SEK', 'NZD', 'MXN', 'BRL', 'ZAR'].forEach((c) => cur.append(new Option(c, c)));
+  const go = el('button', 'btn', t('value.refresh'));
+  const stop = el('button', 'btn hidden', t('value.stop'));
+  const status = el('span', 'hint');
+  row.append(cur, go, stop, status);
+  box.append(total, basis, row, el('p', 'hint', t('value.disclaimer')));
+
+  const show = async () => {
+    const v = await window.api.valueGet();
+    cur.value = v.currency;
+    if (!v.counted) {
+      total.textContent = '—';
+      basis.textContent = t('value.none');
+    } else {
+      total.textContent = t('value.summary', { total: v.total.toLocaleString(appInfo.lang === 'en' ? 'en-GB' : 'pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), currency: v.currency });
+      basis.textContent = t('value.basis', { counted: v.counted, owned: v.owned });
+    }
+  };
+  cur.addEventListener('change', async () => {
+    await window.api.prefsSet({ currency: cur.value });
+    show();
+  });
+  stop.addEventListener('click', () => window.api.valueCancel());
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    stop.classList.remove('hidden');
+    const r = await window.api.valueRefresh();
+    go.disabled = false;
+    stop.classList.add('hidden');
+    status.textContent = r.ok ? t('value.done') : t('value.error', { message: r.message });
+    show();
+  });
+  window.api.onValueProgress((p) => (status.textContent = t('value.progress', { done: p.done, total: p.total })));
+  show();
+  return box;
+}
+
 $('btnStats').addEventListener('click', () => {
   const s = window.AlbumStats.computeStats(allItems);
   const body = $('statsBody');
@@ -723,6 +769,7 @@ $('btnStats').addEventListener('click', () => {
   section('Najczęstsi wykonawcy', s.topArtists);
   section('Najczęstsze wytwórnie', s.topLabels);
   if (!s.total) body.append(el('p', 'hint', 'Kolekcja jest pusta — nie ma jeszcze czego policzyć.'));
+  body.append(buildValueBox(el));
   openModal('statsModal');
 });
 

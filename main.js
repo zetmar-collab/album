@@ -16,6 +16,7 @@ const { sniffImage } = require('./lib/image');
 const { createBarcodeDecoder } = require('./lib/barcode');
 const { findOrphanCovers } = require('./lib/orphans');
 const { sanitizePrefs } = require('./lib/prefs');
+const { summarize, idsToRefresh } = require('./lib/valuation');
 const { mapApiRelease, mapCsv, planImport } = require('./lib/discogsImport');
 const { checkLatest } = require('./lib/update');
 const i18n = require('./renderer/i18n');
@@ -37,6 +38,9 @@ let dataFile = '';
 let settingsFile = '';
 
 let items = [];
+let marketFile = '';
+let marketCache = {}; // { releaseId: { value, currency, forSale, at } } - wyceny z Discogs (osobny plik, nie w pozycjach)
+let valueRun = null; // trwające odświeżanie wycen: { cancel: boolean }
 let settings = { discogsToken: '', prefs: sanitizePrefs() };
 let loadReport = { status: 'ok', corruptPath: null, skipped: 0 };
 
@@ -54,6 +58,7 @@ function initPaths() {
   fs.mkdirSync(coversDir, { recursive: true });
   dataFile = path.join(dataDir, 'collection.json');
   settingsFile = path.join(dataDir, 'settings.json');
+  marketFile = path.join(dataDir, 'market-values.json');
 }
 
 /** Szyfrowanie tokenu systemowym magazynem (DPAPI/Keychain/libsecret); na Linuksie bez keyringu zostaje zwykły tekst. */
@@ -113,6 +118,7 @@ function loadAll() {
   items = clean.items;
   loadReport = { status: r.status, corruptPath: r.corruptPath, skipped: clean.skipped };
   loadSettings();
+  marketCache = loadJsonRecovering(marketFile, {}, (v) => v && typeof v === 'object' && !Array.isArray(v)).value;
 }
 
 function saveItems() {
@@ -653,6 +659,42 @@ function setupIpc() {
       return await runImport(parsed.candidates, parsed.skipped);
     } catch (e) {
       return { ok: false, message: e.message };
+    }
+  });
+
+  // ---------- wycena kolekcji (najniższe oferty na Discogs) ----------
+
+  ipcMain.handle('value:get', () => summarize(items, marketCache, settings.prefs.currency));
+
+  ipcMain.handle('value:cancel', () => {
+    if (valueRun) valueRun.cancel = true;
+    return true;
+  });
+
+  ipcMain.handle('value:refresh', async () => {
+    if (!settings.discogsToken) return { ok: false, message: t('value.noToken') };
+    if (valueRun) return { ok: false, message: 'busy' };
+    const currency = settings.prefs.currency;
+    const ids = idsToRefresh(items, marketCache, currency);
+    valueRun = { cancel: false };
+    try {
+      let done = 0;
+      for (const id of ids) {
+        if (valueRun.cancel) break;
+        const r = await lookup.fetchMarketStats(id, currency);
+        // brak ofert też zapamiętujemy (wartość 0 nie jest liczona), żeby nie pytać w kółko
+        marketCache[id] = r ? { value: r.value, currency: r.currency, forSale: r.forSale, at: Date.now() } : { value: null, currency, forSale: 0, at: Date.now() };
+        done++;
+        sendToRenderer('value-progress', { done, total: ids.length });
+        await new Promise((resolve) => setTimeout(resolve, 1100)); // limit Discogs: 60 zapytań/min
+      }
+      saveJsonAtomic(marketFile, marketCache);
+      return Object.assign({ ok: true, canceled: valueRun.cancel }, summarize(items, marketCache, currency));
+    } catch (e) {
+      saveJsonAtomic(marketFile, marketCache); // zachowujemy to, co już pobrano
+      return { ok: false, message: e.message };
+    } finally {
+      valueRun = null;
     }
   });
 

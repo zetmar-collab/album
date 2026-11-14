@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('api', {
   importDiscogsApi: () => ipcRenderer.invoke('import:discogsApi'),
   importDiscogsCsv: () => ipcRenderer.invoke('import:discogsCsv'),
   onImportProgress: (cb) => ipcRenderer.on('import-progress', (ev, data) => cb(data)),
+  valueGet: () => ipcRenderer.invoke('value:get'),
+  valueRefresh: () => ipcRenderer.invoke('value:refresh'),
+  valueCancel: () => ipcRenderer.invoke('value:cancel'),
+  onValueProgress: (cb) => ipcRenderer.on('value-progress', (ev, data) => cb(data)),
   onPhoneEvent: (cb) => ipcRenderer.on('phone-event', (ev, data) => cb(data)),
   onDataChanged: (cb) => ipcRenderer.on('data-changed', (ev, data) => cb(data || {}))
 });

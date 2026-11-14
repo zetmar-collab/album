@@ -2,6 +2,19 @@
 
 (function (root) {
   const entries = {
+    // --- valuation ---
+    'value.title': 'Market value (approximate)',
+    'value.summary': '≈ {total} {currency}',
+    'value.basis': 'based on the lowest Discogs listings for {counted} of {owned} items',
+    'value.none': 'No valuations yet — click “Refresh values”. Items fetched from Discogs (search or import) can be valued.',
+    'value.disclaimer': 'This is the lowest asking price, not a sale price; media condition is not taken into account.',
+    'value.refresh': 'Refresh values',
+    'value.stop': 'Stop',
+    'value.progress': 'Fetching prices… {done}/{total}',
+    'value.done': 'Values refreshed.',
+    'value.noToken': 'Valuation needs a Discogs token (Settings).',
+    'value.error': 'Valuation failed: {message}',
+    'value.currency': 'Currency',
     // --- import ---
     'common.cancel': 'Cancel',
     'import.section': 'Import collection',
