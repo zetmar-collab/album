@@ -9,8 +9,17 @@ const { createBarcodeDecoder } = require('../lib/barcode');
 
 const WASM = path.join(__dirname, '..', 'node_modules', 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm');
 
+// Moduł zapisu też ładuje WASM z lokalnego pliku (domyślnie pobierałby go z CDN, więc test zależałby od sieci).
+const WRITER_WASM = path.join(__dirname, '..', 'node_modules', 'zxing-wasm', 'dist', 'writer', 'zxing_writer.wasm');
+let writerReady = null;
+
 async function makeEan(text) {
-  const { writeBarcode } = await import('zxing-wasm/writer');
+  const { writeBarcode, prepareZXingModule } = await import('zxing-wasm/writer');
+  if (!writerReady) {
+    const b = fs.readFileSync(WRITER_WASM);
+    prepareZXingModule({ overrides: { wasmBinary: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) } });
+    writerReady = true;
+  }
   const w = await writeBarcode(text, { format: 'EAN-13', scale: 4, withQuietZones: true });
   return Buffer.from(await w.image.arrayBuffer());
 }
