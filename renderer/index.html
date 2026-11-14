@@ -230,6 +230,16 @@
           <button id="btnImportCsv" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-table"/></svg><span data-i18n="import.csv">Importuj z pliku CSV…</span></button>
         </div>
         <hr/>
+        <h3 data-i18n="sync.section">Synchronizacja z folderem</h3>
+        <p class="hint" data-i18n="sync.hint">Wybierz folder synchronizowany przez OneDrive lub Dysk Google.</p>
+        <p class="hint" id="syncInfo"></p>
+        <div class="backup-buttons">
+          <button id="btnSyncChoose" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-folder-x"/></svg><span data-i18n="sync.choose">Wybierz folder…</span></button>
+          <button id="btnSyncNow" class="btn btn-primary" data-i18n="sync.now">Synchronizuj teraz</button>
+          <button id="btnSyncClear" class="btn" data-i18n="sync.clear">Wyłącz</button>
+        </div>
+        <p class="hint" id="syncResult"></p>
+        <hr/>
         <h3 data-i18n="update.section">Aktualizacje</h3>
         <p class="hint" id="updateInfo"></p>
         <label class="switch-row" id="prefUpdatesRow">

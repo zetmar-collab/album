@@ -2,6 +2,30 @@
 
 (function (root) {
   const entries = {
+    // --- sync ---
+    'sync.section': 'Folder sync',
+    'sync.hint': 'Pick a folder synced by OneDrive, Google Drive or Dropbox — Album will keep an Album-sync.zip file there. On another computer pick the same folder. On your phone, load that file as a backup.',
+    'sync.none': 'No sync folder is set.',
+    'sync.folder': 'Folder: {folder}',
+    'sync.choose': 'Choose folder…',
+    'sync.now': 'Sync now',
+    'sync.clear': 'Turn off',
+    'sync.chooseTitle': 'Choose the sync folder',
+    'sync.running': 'Syncing…',
+    'sync.noFolder': 'Choose a sync folder first.',
+    'sync.folderMissing': 'The sync folder does not exist or is unavailable: {folder}',
+    'sync.upToDate': 'Everything is up to date.',
+    'sync.pushed': 'Collection saved to the sync folder ({count} items).',
+    'sync.pulled': 'Changes pulled from the sync folder ({count} items).',
+    'sync.merged': 'Collections merged: {added} items added; conflicts (this computer’s versions kept): {conflicts}.',
+    'sync.pullTitle': 'Sync',
+    'sync.pullMessage': 'The folder has newer changes from another device ({remote} items). Take them?',
+    'sync.pullDetail': 'Your current collection ({local} items) will be replaced and its previous version saved as collection.json.bak.',
+    'sync.pull': 'Take changes',
+    'sync.mergeMessage': 'Both sides have changed. Merge the collections?',
+    'sync.mergeDetail': 'Items to be added from the folder: {added}. Different versions of the same item: {conflicts} (this computer’s versions are kept). Deletions are not carried over when merging.',
+    'sync.merge': 'Merge',
+    'sync.error': 'Sync failed: {message}',
     // --- wishlist ---
     'wish.chip': 'Wishlist',
     'wish.field': 'On my wishlist (I do not own it yet)',

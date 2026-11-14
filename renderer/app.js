@@ -587,7 +587,39 @@ window.api.onPhoneEvent((data) => {
 
 window.api.onDataChanged((d) => {
   refresh();
-  if (!d || d.reason !== 'import') toast(t('import.restored'));
+  if (!d || !d.reason) toast(t('import.restored'));
+});
+
+// ---------- synchronizacja z folderem ----------
+
+async function refreshSyncInfo() {
+  const s = await window.api.syncStatus();
+  $('syncInfo').textContent = s.folder ? t('sync.folder', { folder: s.folder }) : t('sync.none');
+  $('btnSyncNow').disabled = !s.folder;
+  $('btnSyncClear').classList.toggle('hidden', !s.folder);
+}
+
+$('btnSyncChoose').addEventListener('click', async () => {
+  const r = await window.api.syncChooseFolder();
+  if (r.ok) refreshSyncInfo();
+});
+$('btnSyncClear').addEventListener('click', async () => {
+  await window.api.syncClear();
+  $('syncResult').textContent = '';
+  refreshSyncInfo();
+});
+$('btnSyncNow').addEventListener('click', async () => {
+  const out = $('syncResult');
+  out.textContent = t('sync.running');
+  $('btnSyncNow').disabled = true;
+  const r = await window.api.syncRun();
+  $('btnSyncNow').disabled = false;
+  if (r.canceled) out.textContent = '';
+  else if (!r.ok) out.textContent = t('sync.error', { message: r.message });
+  else if (r.action === 'none') out.textContent = t('sync.upToDate');
+  else if (r.action === 'push') out.textContent = t('sync.pushed', { count: r.count });
+  else if (r.action === 'pull') out.textContent = t('sync.pulled', { count: r.count });
+  else out.textContent = t('sync.merged', { added: r.added, conflicts: r.conflicts });
 });
 
 // ---------- import z Discogs ----------
@@ -634,6 +666,8 @@ async function openSettings() {
   $('btnUpdateCheck').classList.toggle('hidden', appInfo.inStore);
   $('prefUpdates').checked = !s.prefs || s.prefs.checkUpdates !== false;
   $('updateResult').textContent = '';
+  $('syncResult').textContent = '';
+  refreshSyncInfo();
   openModal('settingsModal');
   refreshDiscogsStatus();
   refreshOrphanInfo();

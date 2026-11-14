@@ -16,6 +16,7 @@ const { sniffImage } = require('./lib/image');
 const { createBarcodeDecoder } = require('./lib/barcode');
 const { findOrphanCovers } = require('./lib/orphans');
 const { sanitizePrefs } = require('./lib/prefs');
+const { SYNC_FILE, hashItems, planSync, mergeItems, extractCovers } = require('./lib/sync');
 const { summarize, idsToRefresh } = require('./lib/valuation');
 const { mapApiRelease, mapCsv, planImport } = require('./lib/discogsImport');
 const { checkLatest } = require('./lib/update');
@@ -39,6 +40,7 @@ let settingsFile = '';
 
 let items = [];
 let marketFile = '';
+let syncStateFile = '';
 let marketCache = {}; // { releaseId: { value, currency, forSale, at } } - wyceny z Discogs (osobny plik, nie w pozycjach)
 let valueRun = null; // trwające odświeżanie wycen: { cancel: boolean }
 let settings = { discogsToken: '', prefs: sanitizePrefs() };
@@ -59,6 +61,7 @@ function initPaths() {
   dataFile = path.join(dataDir, 'collection.json');
   settingsFile = path.join(dataDir, 'settings.json');
   marketFile = path.join(dataDir, 'market-values.json');
+  syncStateFile = path.join(dataDir, 'sync-state.json');
 }
 
 /** Szyfrowanie tokenu systemowym magazynem (DPAPI/Keychain/libsecret); na Linuksie bez keyringu zostaje zwykły tekst. */
@@ -657,6 +660,94 @@ function setupIpc() {
       const parsed = mapCsv(fs.readFileSync(r.filePaths[0], 'utf8'));
       if (parsed.error) return { ok: false, message: t('import.csvBad') };
       return await runImport(parsed.candidates, parsed.skipped);
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
+  });
+
+  // ---------- synchronizacja przez wspólny folder (OneDrive / Dysk / Dropbox) ----------
+
+  const readSyncState = () => loadJsonRecovering(syncStateFile, {}, (v) => v && typeof v === 'object' && !Array.isArray(v)).value;
+  const writeSyncState = (folder, hash) => saveJsonAtomic(syncStateFile, { folder, lastHash: hash, at: Date.now() });
+
+  ipcMain.handle('sync:status', () => ({ folder: settings.prefs.syncFolder }));
+
+  ipcMain.handle('sync:chooseFolder', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, { title: t('sync.chooseTitle'), properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
+    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, { syncFolder: r.filePaths[0] })) });
+    saveSettings();
+    return { ok: true, folder: settings.prefs.syncFolder };
+  });
+
+  ipcMain.handle('sync:clear', () => {
+    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, { syncFolder: '' })) });
+    saveSettings();
+    return { ok: true };
+  });
+
+  ipcMain.handle('sync:run', async () => {
+    const folder = settings.prefs.syncFolder;
+    if (!folder) return { ok: false, message: t('sync.noFolder') };
+    try {
+      if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) return { ok: false, message: t('sync.folderMissing', { folder }) };
+      const file = path.join(folder, SYNC_FILE);
+      const remote = fs.existsSync(file) ? readBackup(file) : null;
+      const st = readSyncState();
+      const lastHash = st.folder === folder ? st.lastHash || null : null;
+      const plan = planSync({ localItems: items, remoteItems: remote && remote.items, lastHash });
+
+      const push = () => {
+        const tmp = file + '.tmp';
+        const res = writeBackup(tmp, { items, coversDir, token: '' }); // token Discogs nigdy nie trafia do folderu synchronizacji
+        fs.renameSync(tmp, file);
+        writeSyncState(folder, hashItems(items));
+        return { ok: true, action: 'push', count: res.count };
+      };
+
+      if (plan.action === 'none') {
+        writeSyncState(folder, plan.localHash);
+        return { ok: true, action: 'none' };
+      }
+      if (plan.action === 'push') return push();
+
+      if (plan.action === 'pull') {
+        const ask = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          buttons: [t('sync.pull'), t('common.cancel')],
+          defaultId: 1,
+          cancelId: 1,
+          title: t('sync.pullTitle'),
+          message: t('sync.pullMessage', { remote: remote.items.length }),
+          detail: t('sync.pullDetail', { local: items.length })
+        });
+        if (ask.response !== 0) return { ok: false, canceled: true };
+        applyBackup(remote, { dataFile, coversDir });
+        items = remote.items;
+        sessionCovers.clear();
+        writeSyncState(folder, hashItems(items));
+        sendToRenderer('data-changed', { reason: 'sync' });
+        return { ok: true, action: 'pull', count: items.length };
+      }
+
+      // merge
+      const m = mergeItems(items, remote.items);
+      const ask = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: [t('sync.merge'), t('common.cancel')],
+        defaultId: 1,
+        cancelId: 1,
+        title: t('sync.pullTitle'),
+        message: t('sync.mergeMessage'),
+        detail: t('sync.mergeDetail', { added: m.added.length, conflicts: m.conflicts })
+      });
+      if (ask.response !== 0) return { ok: false, canceled: true };
+      extractCovers(remote.zip, m.added.map((i) => i.coverFile).filter(Boolean), coversDir);
+      items = m.items;
+      saveItems();
+      const res = push();
+      sendToRenderer('data-changed', { reason: 'sync' });
+      return { ok: true, action: 'merge', added: m.added.length, conflicts: m.conflicts, count: res.count };
     } catch (e) {
       return { ok: false, message: e.message };
     }

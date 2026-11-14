@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('api', {
   valueRefresh: () => ipcRenderer.invoke('value:refresh'),
   valueCancel: () => ipcRenderer.invoke('value:cancel'),
   onValueProgress: (cb) => ipcRenderer.on('value-progress', (ev, data) => cb(data)),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  syncChooseFolder: () => ipcRenderer.invoke('sync:chooseFolder'),
+  syncClear: () => ipcRenderer.invoke('sync:clear'),
+  syncRun: () => ipcRenderer.invoke('sync:run'),
   onPhoneEvent: (cb) => ipcRenderer.on('phone-event', (ev, data) => cb(data)),
   onDataChanged: (cb) => ipcRenderer.on('data-changed', (ev, data) => cb(data || {}))
 });

@@ -2,6 +2,30 @@
 
 (function (root) {
   const entries = {
+    // --- synchronizacja ---
+    'sync.section': 'Synchronizacja z folderem',
+    'sync.hint': 'Wybierz folder synchronizowany przez OneDrive, Dysk Google lub Dropbox — Album zapisze tam plik Album-sync.zip. Na drugim komputerze wybierz ten sam folder. Na telefonie wczytaj ten plik jako kopię zapasową.',
+    'sync.none': 'Folder synchronizacji nie jest ustawiony.',
+    'sync.folder': 'Folder: {folder}',
+    'sync.choose': 'Wybierz folder…',
+    'sync.now': 'Synchronizuj teraz',
+    'sync.clear': 'Wyłącz',
+    'sync.chooseTitle': 'Wybierz folder synchronizacji',
+    'sync.running': 'Synchronizuję…',
+    'sync.noFolder': 'Najpierw wybierz folder synchronizacji.',
+    'sync.folderMissing': 'Folder synchronizacji nie istnieje lub jest niedostępny: {folder}',
+    'sync.upToDate': 'Wszystko jest aktualne.',
+    'sync.pushed': 'Zapisano kolekcję w folderze synchronizacji ({count} pozycji).',
+    'sync.pulled': 'Pobrano zmiany z folderu synchronizacji ({count} pozycji).',
+    'sync.merged': 'Połączono kolekcje: dodano {added} pozycji; konflikty (zostały wersje z tego komputera): {conflicts}.',
+    'sync.pullTitle': 'Synchronizacja',
+    'sync.pullMessage': 'W folderze są nowsze zmiany z innego urządzenia ({remote} pozycji). Przejąć je?',
+    'sync.pullDetail': 'Obecna kolekcja ({local} pozycji) zostanie zastąpiona, a jej poprzednia wersja zapisana jako collection.json.bak.',
+    'sync.pull': 'Przejmij zmiany',
+    'sync.mergeMessage': 'Zmiany są po obu stronach. Połączyć kolekcje?',
+    'sync.mergeDetail': 'Z folderu zostanie dodanych: {added} pozycji. Różnych wersji tej samej pozycji: {conflicts} (zostają wersje z tego komputera). Usunięcia nie są przenoszone przy łączeniu.',
+    'sync.merge': 'Połącz',
+    'sync.error': 'Błąd synchronizacji: {message}',
     // --- lista życzeń ---
     'wish.chip': 'Lista życzeń',
     'wish.field': 'Na liście życzeń (jeszcze jej nie mam)',
