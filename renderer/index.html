@@ -54,6 +54,14 @@
     </div>
   </header>
 
+  <div id="updateBanner" class="update-banner hidden" role="status">
+    <span id="updateText"></span>
+    <span class="spacer"></span>
+    <button id="btnUpdateGet" class="btn btn-small btn-primary" data-i18n="update.download">Pobierz</button>
+    <button id="btnUpdateSkip" class="btn btn-small" data-i18n="update.skip">Pomiń tę wersję</button>
+    <button id="btnUpdateClose" class="btn btn-small btn-icon" aria-label="Zamknij"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"/></svg></button>
+  </div>
+
   <nav class="filterbar" aria-label="Filtry kolekcji">
     <div class="format-filters" id="formatFilters">
       <button class="chip active" data-format="all">Wszystkie <span class="chip-count"></span></button>
@@ -212,6 +220,22 @@
           <button id="btnImport" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg><span>Przywróć z kopii…</span></button>
         </div>
         <hr/>
+        <h3 data-i18n="import.section">Import kolekcji</h3>
+        <p class="hint" data-i18n="import.hint">Przenieś swoją kolekcję z Discogs.</p>
+        <div class="backup-buttons">
+          <button id="btnImportApi" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span data-i18n="import.api">Importuj z konta Discogs…</span></button>
+          <button id="btnImportCsv" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-table"/></svg><span data-i18n="import.csv">Importuj z pliku CSV…</span></button>
+        </div>
+        <hr/>
+        <h3 data-i18n="update.section">Aktualizacje</h3>
+        <p class="hint" id="updateInfo"></p>
+        <label class="switch-row" id="prefUpdatesRow">
+          <input type="checkbox" id="prefUpdates" class="switch" />
+          <span data-i18n="update.auto">Sprawdzaj nowe wersje w tle</span>
+        </label>
+        <button id="btnUpdateCheck" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-globe"/></svg><span data-i18n="update.checkNow">Sprawdź teraz</span></button>
+        <p class="hint" id="updateResult"></p>
+        <hr/>
         <h3>Konserwacja</h3>
         <p class="hint" id="orphanInfo">Okładki, do których nie odwołuje się żadna pozycja, zajmują miejsce na dysku.</p>
         <button id="btnOrphans" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-folder-x"/></svg><span>Wyczyść nieużywane okładki…</span></button>
@@ -236,6 +260,9 @@
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
+  <script src="i18n.js"></script>
+  <script src="lang-pl.js"></script>
+  <script src="lang-en.js"></script>
   <script src="dedupe.js"></script>
   <script src="stats.js"></script>
   <script src="app.js"></script>

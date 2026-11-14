@@ -2,6 +2,16 @@
 
 const FORMAT_LABEL = { vinyl: 'WINYL', cd: 'CD', cassette: 'KASETA' };
 
+const { t } = window.AlbumI18n;
+let appInfo = { version: '', inStore: false, lang: 'pl' };
+
+/** Język interfejsu ustala proces główny (ustawienie użytkownika albo język systemu). */
+async function initI18n() {
+  appInfo = await window.api.appInfo();
+  window.AlbumI18n.setLang(appInfo.lang);
+  window.AlbumI18n.applyDom(document);
+}
+
 /** Ikona z zestawu SVG (sprite w index.html) - spójna na każdym systemie, w przeciwieństwie do emoji. */
 const icon = (name, cls) => '<svg class="ic' + (cls ? ' ' + cls : '') + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
 const FORMAT_ICON = { vinyl: icon('disc'), cd: icon('disc'), cassette: icon('cassette') };
@@ -547,10 +557,25 @@ window.api.onPhoneEvent((data) => {
   }
 });
 
-window.api.onDataChanged(() => {
+window.api.onDataChanged((d) => {
   refresh();
-  toast('Kolekcja została przywrócona z kopii zapasowej.');
+  if (!d || d.reason !== 'import') toast(t('import.restored'));
 });
+
+// ---------- import z Discogs ----------
+
+window.api.onImportProgress((p) => toast(t(p.stage === 'covers' ? 'import.covers' : 'import.progress', { done: p.done, total: p.total || p.done }), 60000));
+
+async function runImportUi(call) {
+  closeModal('settingsModal');
+  const r = await call();
+  if (r.canceled) return;
+  if (!r.ok) toast(t('import.error', { message: r.message }), 8000);
+  else if (!r.added) toast(t('import.nothing', { dup: r.duplicates, skipped: r.skipped }), 6000);
+  else toast(t('import.done', { added: r.added, dup: r.duplicates, skipped: r.skipped }), 7000);
+}
+$('btnImportApi').addEventListener('click', () => runImportUi(() => window.api.importDiscogsApi()));
+$('btnImportCsv').addEventListener('click', () => runImportUi(() => window.api.importDiscogsCsv()));
 
 // ---------- ustawienia / kopia zapasowa ----------
 
@@ -576,12 +601,47 @@ async function refreshDiscogsStatus() {
 async function openSettings() {
   const s = await window.api.getSettings();
   $('discogsToken').value = s.discogsToken || '';
+  $('updateInfo').textContent = appInfo.inStore ? t('update.store') : t('update.current', { current: appInfo.version });
+  $('prefUpdatesRow').classList.toggle('hidden', appInfo.inStore);
+  $('btnUpdateCheck').classList.toggle('hidden', appInfo.inStore);
+  $('prefUpdates').checked = !s.prefs || s.prefs.checkUpdates !== false;
+  $('updateResult').textContent = '';
   openModal('settingsModal');
   refreshDiscogsStatus();
   refreshOrphanInfo();
 }
 
 // ---------- zdarzenia ----------
+
+// ---------- aktualizacje ----------
+
+let pendingUpdate = null;
+
+function showUpdate(d) {
+  pendingUpdate = d;
+  $('updateText').textContent = t('update.available', { latest: d.latest, current: d.current });
+  $('updateBanner').classList.remove('hidden');
+}
+
+window.api.onUpdateAvailable(showUpdate);
+$('btnUpdateGet').addEventListener('click', () => pendingUpdate && window.api.updateOpen(pendingUpdate.url));
+$('btnUpdateSkip').addEventListener('click', () => {
+  if (pendingUpdate) window.api.updateSkip(pendingUpdate.latest);
+  $('updateBanner').classList.add('hidden');
+});
+$('btnUpdateClose').addEventListener('click', () => $('updateBanner').classList.add('hidden'));
+
+$('prefUpdates').addEventListener('change', (e) => window.api.prefsSet({ checkUpdates: e.target.checked }));
+$('btnUpdateCheck').addEventListener('click', async () => {
+  const out = $('updateResult');
+  out.textContent = t('update.checking');
+  const r = await window.api.updateCheck();
+  if (!r.ok) out.textContent = t('update.error', { message: r.message });
+  else if (r.updateAvailable) {
+    out.textContent = t('update.newer', { latest: r.latest });
+    showUpdate({ latest: r.latest, current: r.current, url: r.url });
+  } else out.textContent = t('update.upToDate', { current: r.current });
+});
 
 $('btnAdd').addEventListener('click', () => openEdit(null));
 $('btnEmptyAdd').addEventListener('click', () => openEdit(null));
@@ -769,4 +829,4 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-refresh();
+initI18n().then(refresh);

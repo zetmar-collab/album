@@ -1,0 +1,40 @@
+'use strict';
+
+(function (root) {
+  const entries = {
+    // --- import ---
+    'common.cancel': 'Cancel',
+    'import.section': 'Import collection',
+    'import.hint': 'Bring your collection over from Discogs: via your account (needs a token) or from a CSV file (Discogs → Collection → Export). Items you already have are skipped.',
+    'import.api': 'Import from Discogs account…',
+    'import.csv': 'Import from CSV file…',
+    'import.progress': 'Fetching your Discogs collection… {done}/{total}',
+    'import.covers': 'Downloading covers… {done}/{total}',
+    'import.noToken': 'Add your Discogs token in Settings first.',
+    'import.csvBad': 'This does not look like a Discogs collection export (Artist and Title columns are missing).',
+    'import.csvOpen': 'Choose the Discogs CSV file',
+    'import.csvTooBig': 'The file is too large (20 MB limit).',
+    'import.title': 'Import from Discogs',
+    'import.confirm': 'Add {n} new items to your collection?',
+    'import.detail': 'Already in your collection (skipped): {dup}. Unsupported formats such as DVD (skipped): {skipped}. Track lists and barcodes are not imported — you can fill them in when editing an item.',
+    'import.add': 'Add {n}',
+    'import.done': 'Imported {added} items (skipped: {dup} duplicates, {skipped} unsupported).',
+    'import.nothing': 'Nothing to add (duplicates: {dup}, unsupported: {skipped}).',
+    'import.error': 'Import failed: {message}',
+    'import.restored': 'The collection was restored from the backup.',
+    'update.available': 'A new version of Album is available: {latest} (you have {current}).',
+    'update.download': 'Download',
+    'update.skip': 'Skip this version',
+    'update.section': 'Updates',
+    'update.current': 'Installed version: {current}',
+    'update.store': 'This copy comes from the Microsoft Store and updates automatically.',
+    'update.auto': 'Check for new versions in the background (once a day, a request to GitHub)',
+    'update.checkNow': 'Check now',
+    'update.checking': 'Checking…',
+    'update.upToDate': 'You have the latest version ({current}).',
+    'update.newer': 'Version {latest} is available.',
+    'update.error': 'Could not check for updates: {message}'
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = entries;
+  else root.AlbumI18n.register('en', entries);
+})(typeof window !== 'undefined' ? window : globalThis);

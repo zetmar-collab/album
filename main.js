@@ -15,10 +15,19 @@ const { createPhoneApp } = require('./lib/phoneServer');
 const { sniffImage } = require('./lib/image');
 const { createBarcodeDecoder } = require('./lib/barcode');
 const { findOrphanCovers } = require('./lib/orphans');
+const { sanitizePrefs } = require('./lib/prefs');
+const { mapApiRelease, mapCsv, planImport } = require('./lib/discogsImport');
+const { checkLatest } = require('./lib/update');
+const i18n = require('./renderer/i18n');
+i18n.register('pl', require('./renderer/lang-pl'));
+i18n.register('en', require('./renderer/lang-en'));
+const t = i18n.t;
 
 const PHONE_PORT = 8137;
 const PHONE_IDLE_MS = 15 * 60 * 1000;
 const PHONE_COVER_MAX_DIM = 2000;
+const REPO = 'zetmar-collab/album';
+const UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const APP_UA = 'AlbumApp/1.0 (kolekcja muzyczna; https://github.com/zetmar-collab/album)';
 
 let mainWindow = null;
@@ -28,7 +37,7 @@ let dataFile = '';
 let settingsFile = '';
 
 let items = [];
-let settings = { discogsToken: '' };
+let settings = { discogsToken: '', prefs: sanitizePrefs() };
 let loadReport = { status: 'ok', corruptPath: null, skipped: 0 };
 
 // Okładki wgrane w tej sesji edycji (z dysku lub z telefonu), jeszcze nie zapisane przy pozycji.
@@ -73,11 +82,17 @@ function loadSettings() {
   } else if (typeof o.discogsToken === 'string') {
     token = o.discogsToken;
   }
-  settings = { discogsToken: token.trim() };
+  settings = { discogsToken: token.trim(), prefs: sanitizePrefs(o.prefs) };
+  applyLanguage();
+}
+
+/** Język interfejsu: z ustawień albo z języka systemu (polski lub angielski). */
+function applyLanguage() {
+  i18n.setLang(i18n.resolveLang(settings.prefs.language, app.getLocale()));
 }
 
 function saveSettings() {
-  const out = {};
+  const out = { prefs: settings.prefs };
   if (settings.discogsToken) {
     if (encryptionUsable()) {
       try {
@@ -426,6 +441,45 @@ function setupIpc() {
 
   ipcMain.handle('settings:get', () => settings);
 
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    inStore: !!process.windowsStore,
+    lang: i18n.getLang(),
+    platform: process.platform
+  }));
+
+  ipcMain.handle('prefs:set', (ev, patchObj) => {
+    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, patchObj || {})) });
+    saveSettings();
+    applyLanguage();
+    return settings.prefs;
+  });
+
+  // Sprawdzanie aktualizacji: tylko informacja i link do strony wydania - nic nie jest pobierane ani instalowane.
+  ipcMain.handle('update:check', async () => {
+    const current = app.getVersion();
+    try {
+      const r = await checkLatest({ repo: REPO, current });
+      settings.prefs.lastUpdateCheck = Date.now();
+      saveSettings();
+      return Object.assign({ ok: true, current }, r);
+    } catch (e) {
+      return { ok: false, current, message: e.message };
+    }
+  });
+
+  ipcMain.handle('update:open', (ev, url) => {
+    const u = String(url || '');
+    if (u.startsWith('https://github.com/' + REPO + '/releases/')) shell.openExternal(u);
+    return true;
+  });
+
+  ipcMain.handle('update:skip', (ev, version) => {
+    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, { skipVersion: String(version || '') })) });
+    saveSettings();
+    return true;
+  });
+
   ipcMain.handle('settings:status', async () => {
     const token = (settings.discogsToken || '').trim();
     if (!token) return { hasToken: false };
@@ -524,6 +578,82 @@ function setupIpc() {
       }
     }
     return { ok: true, removed, failed };
+  });
+
+  // ---------- import kolekcji z Discogs (konto lub plik CSV) ----------
+
+  /** Wspólna część importu: plan, potwierdzenie, zapis, a potem (w tle) pobranie okładek. */
+  async function runImport(candidates, skipped) {
+    const plan = planImport(items, candidates);
+    if (!plan.toAdd.length) return { ok: true, added: 0, duplicates: plan.duplicates, skipped };
+    const ask = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: [t('import.add', { n: plan.toAdd.length }), t('common.cancel')],
+      defaultId: 1,
+      cancelId: 1,
+      title: t('import.title'),
+      message: t('import.confirm', { n: plan.toAdd.length }),
+      detail: t('import.detail', { dup: plan.duplicates, skipped })
+    });
+    if (ask.response !== 0) return { ok: false, canceled: true };
+
+    const fresh = plan.toAdd.map((c) => sanitizeItem(Object.assign({}, c, { id: null })));
+    items.push(...fresh);
+    saveItems();
+    sendToRenderer('data-changed', { reason: 'import' });
+
+    // Okładki dociągamy po zapisie (maks. 4 naraz) - błąd jednej nie psuje reszty importu.
+    const withCover = fresh.map((it, i) => ({ id: it.id, url: plan.toAdd[i].coverUrl })).filter((x) => x.url);
+    let done = 0;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < withCover.length) {
+        const job = withCover[cursor++];
+        const name = await downloadCover(job.url);
+        const it = items.find((x) => x.id === job.id);
+        if (name && it) it.coverFile = name;
+        done++;
+        sendToRenderer('import-progress', { stage: 'covers', done, total: withCover.length });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, withCover.length) }, worker));
+    if (withCover.length) {
+      saveItems();
+      sendToRenderer('data-changed', { reason: 'import' });
+    }
+    return { ok: true, added: fresh.length, duplicates: plan.duplicates, skipped };
+  }
+
+  ipcMain.handle('import:discogsApi', async () => {
+    try {
+      if (!settings.discogsToken) return { ok: false, message: t('import.noToken') };
+      const who = await lookup.verifyDiscogsToken(settings.discogsToken);
+      if (!who.ok || !who.username) return { ok: false, message: who.message || t('import.noToken') };
+      const { releases } = await lookup.fetchCollection(who.username, {
+        onProgress: (p) => sendToRenderer('import-progress', { stage: 'fetch', done: p.done, total: p.total })
+      });
+      const mapped = releases.map(mapApiRelease);
+      return await runImport(mapped.filter(Boolean), mapped.filter((x) => !x).length);
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
+  });
+
+  ipcMain.handle('import:discogsCsv', async () => {
+    try {
+      const r = await dialog.showOpenDialog(mainWindow, {
+        title: t('import.csvOpen'),
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+        properties: ['openFile']
+      });
+      if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
+      if (fs.statSync(r.filePaths[0]).size > 20 * 1024 * 1024) return { ok: false, message: t('import.csvTooBig') };
+      const parsed = mapCsv(fs.readFileSync(r.filePaths[0], 'utf8'));
+      if (parsed.error) return { ok: false, message: t('import.csvBad') };
+      return await runImport(parsed.candidates, parsed.skipped);
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
   });
 
   ipcMain.handle('export:excel', async () => {
@@ -638,6 +768,23 @@ function setupIpc() {
 
 // ---------- okno ----------
 
+/** Raz na dobę (jeśli włączone, i nie w wersji ze Sklepu, która aktualizuje się sama) pyta GitHub o nowe wydanie. */
+async function autoCheckUpdates() {
+  const p = settings.prefs;
+  if (!p.checkUpdates || process.windowsStore) return;
+  if (Date.now() - p.lastUpdateCheck < UPDATE_INTERVAL_MS) return;
+  try {
+    const r = await checkLatest({ repo: REPO, current: app.getVersion() });
+    settings.prefs.lastUpdateCheck = Date.now();
+    saveSettings();
+    if (r.updateAvailable && r.latest !== p.skipVersion.replace(/^v/, '')) {
+      sendToRenderer('update-available', { latest: r.latest, current: app.getVersion(), url: r.url });
+    }
+  } catch {
+    /* brak internetu - spróbujemy przy następnym uruchomieniu */
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -660,7 +807,10 @@ function createWindow() {
     if (!url.startsWith('file://')) e.preventDefault();
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  mainWindow.webContents.once('did-finish-load', reportLoadProblems);
+  mainWindow.webContents.once('did-finish-load', () => {
+    reportLoadProblems();
+    autoCheckUpdates();
+  });
   mainWindow.on('closed', () => (mainWindow = null));
 }
 

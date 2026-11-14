@@ -19,6 +19,15 @@ contextBridge.exposeInMainWorld('api', {
   coverCleanup: () => ipcRenderer.invoke('covers:cleanup'),
   exportExcel: () => ipcRenderer.invoke('export:excel'),
   importBackup: () => ipcRenderer.invoke('backup:import'),
+  appInfo: () => ipcRenderer.invoke('app:info'),
+  prefsSet: (p) => ipcRenderer.invoke('prefs:set', p),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateOpen: (url) => ipcRenderer.invoke('update:open', url),
+  updateSkip: (v) => ipcRenderer.invoke('update:skip', v),
+  onUpdateAvailable: (cb) => ipcRenderer.on('update-available', (ev, data) => cb(data)),
+  importDiscogsApi: () => ipcRenderer.invoke('import:discogsApi'),
+  importDiscogsCsv: () => ipcRenderer.invoke('import:discogsCsv'),
+  onImportProgress: (cb) => ipcRenderer.on('import-progress', (ev, data) => cb(data)),
   onPhoneEvent: (cb) => ipcRenderer.on('phone-event', (ev, data) => cb(data)),
-  onDataChanged: (cb) => ipcRenderer.on('data-changed', () => cb())
+  onDataChanged: (cb) => ipcRenderer.on('data-changed', (ev, data) => cb(data || {}))
 });
