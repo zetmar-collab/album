@@ -112,6 +112,56 @@
 
   <script>
     'use strict';
+    // Język strony wynika z języka telefonu (polski albo angielski). Klucz = polski tekst źródłowy.
+    const EN = {
+      'Skaner podłączony do komputera': 'Scanner connected to your computer',
+      'Skanuj kod kreskowy': 'Scan a barcode',
+      'Zrób wyraźne zdjęcie kodu kreskowego z tyłu płyty. Komputer odczyta kod i wyszuka album w bazach MusicBrainz i Discogs.': 'Take a clear photo of the barcode on the back of the record. The computer reads the code and looks the album up in MusicBrainz and Discogs.',
+      'Zrób zdjęcie kodu': 'Take a photo of the code',
+      'Wpisz kod ręcznie': 'Type the code by hand',
+      'Jeśli zdjęcie się nie udaje, przepisz cyfry spod kodu kreskowego.': 'If the photo does not work, type the digits under the barcode.',
+      'Kod kreskowy': 'Barcode',
+      'np. 5099749534728': 'e.g. 5099749534728',
+      'Wyślij': 'Send',
+      'Zdjęcie okładki': 'Cover photo',
+      'Zrób zdjęcie okładki — trafi do komputera jako okładka dodawanej pozycji.': 'Take a photo of the cover — it goes to your computer as the cover of the item being added.',
+      'Zrób zdjęcie okładki': 'Take a cover photo',
+      'Wysyłam zdjęcie i odczytuję kod…': 'Sending the photo and reading the code…',
+      'Odczytano kod {code}. ': 'Read code {code}. ',
+      'Znaleziono {n} wyników — sprawdź komputer.': '{n} results found — check your computer.',
+      'Brak wyników w bazach — uzupełnij dane na komputerze.': 'No results in the databases — fill in the details on your computer.',
+      'Brak wyników w bazach.': 'No results in the databases.',
+      'Błąd połączenia z komputerem: {message}': 'Could not reach the computer: {message}',
+      'Kod jest za krótki.': 'The code is too short.',
+      'Wyszukuję kod {code}…': 'Looking up code {code}…',
+      'Wysłano kod {code}. ': 'Sent code {code}. ',
+      'Wysyłam zdjęcie okładki…': 'Sending the cover photo…',
+      'Okładka trafiła na komputer.': 'The cover reached the computer.',
+      'Nieoczekiwana odpowiedź komputera (HTTP {status}).': 'Unexpected response from the computer (HTTP {status}).'
+    };
+    const LANG = /^pl/i.test(navigator.language || '') ? 'pl' : 'en';
+    const tr = (k, p) => {
+      let s = LANG === 'en' && EN[k] !== undefined ? EN[k] : k;
+      if (p) s = s.replace(/\{(\w+)\}/g, (m, n) => (p[n] !== undefined ? p[n] : m));
+      return s;
+    };
+    function translatePage() {
+      if (LANG === 'pl') return;
+      document.documentElement.lang = 'en';
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (n.parentElement && n.parentElement.tagName === 'SCRIPT') continue;
+        const k = n.nodeValue.replace(/\s+/g, ' ').trim();
+        if (EN[k] !== undefined) n.nodeValue = EN[k];
+      }
+      document.querySelectorAll('[placeholder],[aria-label]').forEach((el) => {
+        ['placeholder', 'aria-label'].forEach((a) => {
+          const k = el.getAttribute(a);
+          if (k && EN[k] !== undefined) el.setAttribute(a, EN[k]);
+        });
+      });
+    }
+    translatePage();
     const status = document.getElementById('status');
     // Token sesji podstawia komputer przy wczytaniu strony (po zeskanowaniu kodu QR); wszystkie zapytania
     // do API wysyłają go w nagłówku.
@@ -143,7 +193,7 @@
     }
 
     async function parse(res) {
-      try { return await res.json(); } catch (e) { return { ok: false, message: 'Nieoczekiwana odpowiedź komputera (HTTP ' + res.status + ').' }; }
+      try { return await res.json(); } catch (e) { return { ok: false, message: tr('Nieoczekiwana odpowiedź komputera (HTTP {status}).', { status: res.status }) }; }
     }
 
     async function upload(url, file, maxDim) {
@@ -157,24 +207,24 @@
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      show('busy', 'Wysyłam zdjęcie i odczytuję kod…');
+      show('busy', tr('Wysyłam zdjęcie i odczytuję kod…'));
       try {
         const r = await upload('/api/photo', file, 2200);
         if (r.ok) {
-          show('ok', 'Odczytano kod ' + r.barcode + '. ' +
-            (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach — uzupełnij dane na komputerze.'));
+          show('ok', tr('Odczytano kod {code}. ', { code: r.barcode }) +
+            (r.found ? tr('Znaleziono {n} wyników — sprawdź komputer.', { n: r.found }) : tr('Brak wyników w bazach — uzupełnij dane na komputerze.')));
         } else {
           show('err', '' + r.message);
         }
       } catch (err) {
-        show('err', 'Błąd połączenia z komputerem: ' + err.message);
+        show('err', tr('Błąd połączenia z komputerem: {message}', { message: err.message }));
       }
     });
 
     document.getElementById('sendManual').addEventListener('click', async () => {
       const code = document.getElementById('manualCode').value.replace(/\D/g, '');
-      if (code.length < 7) { show('err', 'Kod jest za krótki.'); return; }
-      show('busy', 'Wyszukuję kod ' + code + '…');
+      if (code.length < 7) { show('err', tr('Kod jest za krótki.')); return; }
+      show('busy', tr('Wyszukuję kod {code}…', { code }));
       try {
         const res = await fetch('/api/barcode', {
           method: 'POST',
@@ -184,13 +234,13 @@
         const r = await parse(res);
         if (r.ok) {
           document.getElementById('manualCode').value = '';
-          show('ok', 'Wysłano kod ' + r.barcode + '. ' +
-            (r.found ? 'Znaleziono ' + r.found + ' wyników — sprawdź komputer.' : 'Brak wyników w bazach.'));
+          show('ok', tr('Wysłano kod {code}. ', { code: r.barcode }) +
+            (r.found ? tr('Znaleziono {n} wyników — sprawdź komputer.', { n: r.found }) : tr('Brak wyników w bazach.')));
         } else {
           show('err', '' + r.message);
         }
       } catch (err) {
-        show('err', 'Błąd połączenia z komputerem: ' + err.message);
+        show('err', tr('Błąd połączenia z komputerem: {message}', { message: err.message }));
       }
     });
 
@@ -198,13 +248,13 @@
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      show('busy', 'Wysyłam zdjęcie okładki…');
+      show('busy', tr('Wysyłam zdjęcie okładki…'));
       try {
         const r = await upload('/api/cover', file, 1600);
-        if (r.ok) show('ok', 'Okładka trafiła na komputer.');
+        if (r.ok) show('ok', tr('Okładka trafiła na komputer.'));
         else show('err', '' + r.message);
       } catch (err) {
-        show('err', 'Błąd połączenia z komputerem: ' + err.message);
+        show('err', tr('Błąd połączenia z komputerem: {message}', { message: err.message }));
       }
     });
   </script>

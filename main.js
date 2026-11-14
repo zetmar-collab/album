@@ -20,9 +20,7 @@ const { SYNC_FILE, hashItems, planSync, mergeItems, extractCovers } = require('.
 const { summarize, idsToRefresh } = require('./lib/valuation');
 const { mapApiRelease, mapCsv, planImport } = require('./lib/discogsImport');
 const { checkLatest } = require('./lib/update');
-const i18n = require('./renderer/i18n');
-i18n.register('pl', require('./renderer/lang-pl'));
-i18n.register('en', require('./renderer/lang-en'));
+const i18n = require('./lib/messages');
 const t = i18n.t;
 
 const PHONE_PORT = 8137;
@@ -155,16 +153,16 @@ function reportLoadProblems() {
   const lines = [];
   let type = 'warning';
   if (status === 'corrupt') {
-    lines.push('Plik kolekcji był uszkodzony i nie udało się go odzyskać. Aplikacja wystartowała z pustą kolekcją.');
-    lines.push('Możesz przywrócić dane z kopii zapasowej (Ustawienia → Przywróć z kopii).');
+    lines.push(t('Plik kolekcji był uszkodzony i nie udało się go odzyskać. Aplikacja wystartowała z pustą kolekcją.'));
+    lines.push(t('Możesz przywrócić dane z kopii zapasowej (Ustawienia → Przywróć z kopii).'));
     type = 'error';
   } else if (status === 'restored') {
-    lines.push('Plik kolekcji był uszkodzony — przywrócono ostatnią poprawną wersję (plik .bak).');
+    lines.push(t('Plik kolekcji był uszkodzony — przywrócono ostatnią poprawną wersję (plik .bak).'));
   }
-  if (corruptPath) lines.push('Uszkodzony plik zachowano jako:\n' + corruptPath);
-  if (skipped > 0) lines.push('Pominięto ' + skipped + ' nieprawidłowych pozycji w pliku kolekcji.');
+  if (corruptPath) lines.push(t('Uszkodzony plik zachowano jako:\n{path}', { path: corruptPath }));
+  if (skipped > 0) lines.push(t('Pominięto {n} nieprawidłowych pozycji w pliku kolekcji.', { n: skipped }));
   if (!lines.length) return;
-  dialog.showMessageBox(mainWindow, { type, title: 'Album — dane kolekcji', message: 'Problem z plikiem kolekcji', detail: lines.join('\n\n'), buttons: ['OK'] });
+  dialog.showMessageBox(mainWindow, { type, title: t('Album — dane kolekcji'), message: t('Problem z plikiem kolekcji'), detail: lines.join('\n\n'), buttons: ['OK'] });
 }
 
 // ---------- okładki ----------
@@ -392,7 +390,7 @@ function setupIpc() {
 
   ipcMain.handle('items:save', async (ev, raw) => {
     const clean = sanitizeItem(raw);
-    if (!clean) throw new Error('Nieprawidłowe dane pozycji.');
+    if (!clean) throw new Error(t('Nieprawidłowe dane pozycji.'));
     let coverFailed = false;
     if (raw && raw.newCoverUrl) {
       const name = await downloadCover(String(raw.newCoverUrl));
@@ -457,8 +455,13 @@ function setupIpc() {
     platform: process.platform
   }));
 
+  // Okno aplikacji może zmieniać tylko te preferencje. syncFolder (dokąd trafia kopia kolekcji) ustawia wyłącznie
+  // proces główny przez sync:chooseFolder / sync:clear (okno wyboru folderu), a skipVersion przez update:skip.
+  const RENDERER_PREFS = ['checkUpdates', 'language', 'currency'];
   ipcMain.handle('prefs:set', (ev, patchObj) => {
-    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, patchObj || {})) });
+    const safe = {};
+    for (const k of RENDERER_PREFS) if (patchObj && Object.prototype.hasOwnProperty.call(patchObj, k)) safe[k] = patchObj[k];
+    settings = Object.assign({}, settings, { prefs: sanitizePrefs(Object.assign({}, settings.prefs, safe)) });
     saveSettings();
     applyLanguage();
     return settings.prefs;
@@ -496,7 +499,7 @@ function setupIpc() {
       const check = await lookup.verifyDiscogsToken(token);
       return { hasToken: true, valid: check.ok, username: check.username || null, message: check.message || null };
     } catch (e) {
-      return { hasToken: true, valid: null, message: 'Brak połączenia z Discogs (' + e.message + ')' };
+      return { hasToken: true, valid: null, message: t('Brak połączenia z Discogs ({message})', { message: e.message }) };
     }
   });
 
@@ -511,7 +514,7 @@ function setupIpc() {
     try {
       check = await lookup.verifyDiscogsToken(token);
     } catch (e) {
-      check = { ok: false, message: 'Brak połączenia z Discogs (' + e.message + '). Token nie został zapisany.' };
+      check = { ok: false, message: t('Brak połączenia z Discogs ({message}). Token nie został zapisany.', { message: e.message }) };
     }
     if (!check.ok) return { ok: false, message: check.message };
     settings = Object.assign({}, settings, { discogsToken: token });
@@ -521,15 +524,15 @@ function setupIpc() {
 
   ipcMain.handle('cover:pick', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: 'Wybierz okładkę',
-      filters: [{ name: 'Obrazy', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+      title: t('Wybierz okładkę'),
+      filters: [{ name: t('Obrazy'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
       properties: ['openFile']
     });
     if (r.canceled || !r.filePaths[0]) return null;
     const buf = fs.readFileSync(r.filePaths[0]);
     const ext = sniffImage(buf);
     if (!ext) {
-      dialog.showMessageBox(mainWindow, { type: 'warning', message: 'Ten plik nie jest obsługiwanym obrazem.', buttons: ['OK'] });
+      dialog.showMessageBox(mainWindow, { type: 'warning', message: t('Ten plik nie jest obsługiwanym obrazem.'), buttons: ['OK'] });
       return null;
     }
     const name = crypto.randomUUID() + ext;
@@ -568,12 +571,12 @@ function setupIpc() {
     const mb = (list.reduce((n, o) => n + o.size, 0) / 1048576).toFixed(1);
     const ask = await dialog.showMessageBox(mainWindow, {
       type: 'question',
-      buttons: ['Przenieś do Kosza', 'Anuluj'],
+      buttons: [t('Przenieś do Kosza'), t('Anuluj')],
       defaultId: 1,
       cancelId: 1,
-      title: 'Nieużywane okładki',
-      message: 'Znaleziono nieużywanych okładek: ' + list.length + ' (' + mb + ' MB)',
-      detail: 'Do tych plików nie odwołuje się żadna pozycja kolekcji. Zostaną przeniesione do Kosza, więc możesz je przywrócić.'
+      title: t('Nieużywane okładki'),
+      message: t('Znaleziono nieużywanych okładek: {n} ({mb} MB)', { n: list.length, mb }),
+      detail: t('Do tych plików nie odwołuje się żadna pozycja kolekcji. Zostaną przeniesione do Kosza, więc możesz je przywrócić.')
     });
     if (ask.response !== 0) return { ok: false, canceled: true };
     let removed = 0;
@@ -792,34 +795,34 @@ function setupIpc() {
   ipcMain.handle('export:excel', async () => {
     const today = new Date().toISOString().slice(0, 10);
     const r = await dialog.showSaveDialog(mainWindow, {
-      title: 'Eksport kolekcji do Excela',
+      title: t('Eksport kolekcji do Excela'),
       defaultPath: path.join(app.getPath('documents'), 'Album-kolekcja-' + today + '.xlsx'),
-      filters: [{ name: 'Skoroszyt Excel', extensions: ['xlsx'] }]
+      filters: [{ name: t('Skoroszyt Excel'), extensions: ['xlsx'] }]
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     try {
-      const FORMAT_PL = { vinyl: 'Winyl', cd: 'CD', cassette: 'Kaseta' };
+      const FORMAT_NAME = { vinyl: t('Winyl'), cd: 'CD', cassette: t('Kaseta') };
       const rows = items.map((i) => ({
-        'Format': FORMAT_PL[i.format] || i.format,
-        'Wykonawca': i.artist,
-        'Tytuł': i.title,
-        'Rok': i.year,
-        'Wytwórnia': i.label,
-        'Nr katalogowy': i.catalogNumber,
-        'Kod kreskowy': i.barcode,
-        'Gatunek': i.genre,
-        'Kraj': i.country,
-        'Stan': i.condition,
-        'Liczba utworów': i.tracklist ? i.tracklist.split('\n').filter((l) => l.trim()).length : '',
-        'Lista utworów': i.tracklist || '',
-        'Notatki': i.notes,
-        'Status': i.wishlist ? 'Lista życzeń' : 'W kolekcji',
-        'Data dodania': (i.addedAt || '').slice(0, 10)
+        [t('Format')]: FORMAT_NAME[i.format] || i.format,
+        [t('Wykonawca')]: i.artist,
+        [t('Tytuł')]: i.title,
+        [t('Rok')]: i.year,
+        [t('Wytwórnia')]: i.label,
+        [t('Nr katalogowy')]: i.catalogNumber,
+        [t('Kod kreskowy')]: i.barcode,
+        [t('Gatunek')]: i.genre,
+        [t('Kraj')]: i.country,
+        [t('Stan')]: i.condition,
+        [t('Liczba utworów')]: i.tracklist ? i.tracklist.split('\n').filter((l) => l.trim()).length : '',
+        [t('Lista utworów')]: i.tracklist || '',
+        [t('Notatki')]: i.notes,
+        [t('Status')]: i.wishlist ? t('wish.chip') : t('W kolekcji'),
+        [t('Data dodania')]: (i.addedAt || '').slice(0, 10)
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = [8, 26, 32, 6, 20, 14, 15, 16, 8, 18, 10, 50, 30, 14, 12].map((w) => ({ wch: w }));
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Kolekcja');
+      XLSX.utils.book_append_sheet(wb, ws, t('Kolekcja'));
       XLSX.writeFile(wb, r.filePath);
       return { ok: true, path: r.filePath, count: rows.length };
     } catch (e) {
@@ -835,21 +838,21 @@ function setupIpc() {
     if (settings.discogsToken) {
       const ask = await dialog.showMessageBox(mainWindow, {
         type: 'question',
-        buttons: ['Bez tokenu (zalecane)', 'Dołącz token', 'Anuluj'],
+        buttons: [t('Bez tokenu (zalecane)'), t('Dołącz token'), t('Anuluj')],
         defaultId: 0,
         cancelId: 2,
-        title: 'Kopia zapasowa',
-        message: 'Czy dołączyć token Discogs do kopii zapasowej?',
-        detail: 'Kopię łatwo przesłać dalej (e-mail, chmura). Token daje dostęp do Twojego konta Discogs — dołącz go tylko, jeśli kopia zostaje wyłącznie u Ciebie.'
+        title: t('Kopia zapasowa'),
+        message: t('Czy dołączyć token Discogs do kopii zapasowej?'),
+        detail: t('Kopię łatwo przesłać dalej (e-mail, chmura). Token daje dostęp do Twojego konta Discogs — dołącz go tylko, jeśli kopia zostaje wyłącznie u Ciebie.')
       });
       if (ask.response === 2) return { ok: false, canceled: true };
       includeToken = ask.response === 1;
     }
 
     const r = await dialog.showSaveDialog(mainWindow, {
-      title: 'Zapisz kopię zapasową',
+      title: t('Zapisz kopię zapasową'),
       defaultPath: path.join(app.getPath('documents'), 'Album-kopia-' + today + '.zip'),
-      filters: [{ name: 'Kopia zapasowa Album (ZIP)', extensions: ['zip'] }]
+      filters: [{ name: t('Kopia zapasowa Album (ZIP)'), extensions: ['zip'] }]
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     try {
@@ -862,25 +865,24 @@ function setupIpc() {
 
   ipcMain.handle('backup:import', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: 'Wybierz plik kopii zapasowej',
-      filters: [{ name: 'Kopia zapasowa Album (ZIP)', extensions: ['zip'] }],
+      title: t('Wybierz plik kopii zapasowej'),
+      filters: [{ name: t('Kopia zapasowa Album (ZIP)'), extensions: ['zip'] }],
       properties: ['openFile']
     });
     if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
     try {
       const backup = readBackup(r.filePaths[0]);
-      const detail =
-        'Kopia zawiera ' + backup.items.length + ' pozycji' +
-        (backup.skipped ? ' (pominięto ' + backup.skipped + ' nieprawidłowych)' : '') + '.\n' +
-        'Obecna kolekcja (' + items.length + ' pozycji) zostanie ZASTĄPIONA.\n' +
-        'Poprzednia wersja pliku kolekcji zostanie zachowana jako collection.json.bak.';
+      const detail = t(
+        'Kopia zawiera {n} pozycji{skipped}.\nObecna kolekcja ({local} pozycji) zostanie ZASTĄPIONA.\nPoprzednia wersja pliku kolekcji zostanie zachowana jako collection.json.bak.',
+        { n: backup.items.length, skipped: backup.skipped ? t(' (pominięto {n} nieprawidłowych)', { n: backup.skipped }) : '', local: items.length }
+      );
       const choice = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
-        buttons: ['Przywróć', 'Anuluj'],
+        buttons: [t('Przywróć'), t('Anuluj')],
         defaultId: 1,
         cancelId: 1,
-        title: 'Przywracanie kopii zapasowej',
-        message: 'Przywrócić kopię zapasową?',
+        title: t('Przywracanie kopii zapasowej'),
+        message: t('Przywrócić kopię zapasową?'),
         detail
       });
       if (choice.response !== 0) return { ok: false, canceled: true };

@@ -1,6 +1,6 @@
 'use strict';
 
-const FORMAT_LABEL = { vinyl: 'WINYL', cd: 'CD', cassette: 'KASETA' };
+const fmtLabel = (f) => t({ vinyl: 'WINYL', cd: 'CD', cassette: 'KASETA' }[f] || f);
 
 const { t } = window.AlbumI18n;
 let appInfo = { version: '', inStore: false, lang: 'pl' };
@@ -133,7 +133,7 @@ function render() {
   const wishCount = allItems.length - owned.length;
   owned.forEach((i) => { if (counts[i.format] !== undefined) counts[i.format]++; });
   $('stats').textContent =
-    owned.length + ' pozycji · ' + counts.vinyl + ' winyli · ' + counts.cd + ' CD · ' + counts.cassette + ' kaset';
+    t('{n} pozycji · {v} winyli · {c} CD · {k} kaset', { n: owned.length, v: counts.vinyl, c: counts.cd, k: counts.cassette });
 
   document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
     const f = chip.dataset.format;
@@ -152,14 +152,14 @@ function render() {
     head.className = 'list-head';
     head.setAttribute('aria-hidden', 'true');
     head.innerHTML =
-      '<span></span><span>Wykonawca / tytuł</span><span>Format</span><span class="num">Rok</span>' +
-      '<span class="c-label">Wytwórnia</span><span class="c-cond">Stan</span><span></span>';
+      '<span></span><span>' + t('Wykonawca / tytuł') + '</span><span>' + t('Format') + '</span><span class="num">' + t('Rok') + '</span>' +
+      '<span class="c-label">' + t('Wytwórnia') + '</span><span class="c-cond">' + t('Stan') + '</span><span></span>';
     frag.appendChild(head);
   }
   if (!list.length && (allItems.length || currentFormat === 'wishlist')) {
     const none = document.createElement('div');
     none.className = 'empty-inline';
-    none.textContent = currentFormat === 'wishlist' && !wishCount ? t('wish.empty') : 'Brak pozycji pasujących do wyszukiwania lub filtra.';
+    none.textContent = currentFormat === 'wishlist' && !wishCount ? t('wish.empty') : t('Brak pozycji pasujących do wyszukiwania lub filtra.');
     frag.appendChild(none);
   }
 
@@ -171,9 +171,9 @@ function render() {
         '<div class="row-cover">' +
         (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || icon('music')) +
         '</div>' +
-        '<div class="row-main"><div class="row-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
-        '<div class="row-title">' + esc(item.title || '(bez tytułu)') + '</div></div>' +
-        '<span class="badge badge-' + item.format + '">' + FORMAT_LABEL[item.format] + '</span>' +
+        '<div class="row-main"><div class="row-artist">' + esc(item.artist || t('(nieznany)')) + '</div>' +
+        '<div class="row-title">' + esc(item.title || t('(bez tytułu)')) + '</div></div>' +
+        '<span class="badge badge-' + item.format + '">' + fmtLabel(item.format) + '</span>' +
         '<span class="row-col num">' + esc(item.year || '') + '</span>' +
         '<span class="row-col c-label" title="' + esc(item.label || '') + '">' + esc(item.label || '') + '</span>' +
         '<span class="row-col c-cond">' + esc(item.condition || '') + '</span>';
@@ -184,23 +184,23 @@ function render() {
         (item.coverUrl ? '<img src="' + esc(item.coverUrl) + '" loading="lazy" decoding="async" alt="" />' : FORMAT_ICON[item.format] || icon('music')) +
         '</div>' +
         '<div class="card-info">' +
-        '<div class="card-artist">' + esc(item.artist || '(nieznany)') + '</div>' +
-        '<div class="card-title">' + esc(item.title || '(bez tytułu)') + '</div>' +
-        '<div class="card-meta"><span class="badge badge-' + item.format + '">' + FORMAT_LABEL[item.format] + '</span>' +
+        '<div class="card-artist">' + esc(item.artist || t('(nieznany)')) + '</div>' +
+        '<div class="card-title">' + esc(item.title || t('(bez tytułu)')) + '</div>' +
+        '<div class="card-meta"><span class="badge badge-' + item.format + '">' + fmtLabel(item.format) + '</span>' +
         (item.year ? '<span class="card-year">' + esc(item.year) + '</span>' : '') +
         '</div></div>';
     }
     const del = document.createElement('button');
     del.className = 'del-btn';
-    del.title = 'Usuń z kolekcji';
-    del.setAttribute('aria-label', 'Usuń z kolekcji');
+    del.title = t('Usuń z kolekcji');
+    del.setAttribute('aria-label', t('Usuń z kolekcji'));
     del.innerHTML = icon('trash', 'ic-sm');
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm('Usunąć „' + (item.artist || '(nieznany)') + ' — ' + (item.title || '(bez tytułu)') + '" z kolekcji?')) return;
+      if (!confirm(t('Usunąć „{name}" z kolekcji?', { name: (item.artist || t('(nieznany)')) + ' — ' + (item.title || t('(bez tytułu)')) }))) return;
       await window.api.deleteItem(item.id);
       await refresh();
-      toast('Usunięto z kolekcji.');
+      toast(t('Usunięto z kolekcji.'));
     });
     el.appendChild(del);
     if (item.wishlist && currentView !== 'list') {
@@ -211,7 +211,7 @@ function render() {
       el.appendChild(w);
     }
     el.tabIndex = 0;
-    el.title = (item.artist || '(nieznany)') + ' — ' + (item.title || '(bez tytułu)');
+    el.title = (item.artist || t('(nieznany)')) + ' — ' + (item.title || t('(bez tytułu)'));
     el.setAttribute('role', 'button');
     el.addEventListener('click', () => openEdit(item));
     el.addEventListener('keydown', (e) => {
@@ -229,7 +229,7 @@ function render() {
 
 function setCoverPreview(url) {
   const p = $('coverPreview');
-  p.innerHTML = url ? '<img src="' + esc(url) + '" />' : '<span>Brak okładki</span>';
+  p.innerHTML = url ? '<img src="' + esc(url) + '" />' : '<span>' + t('Brak okładki') + '</span>';
 }
 
 function fillForm(data) {
@@ -272,7 +272,7 @@ function finishEdit(savedCoverFile) {
 
 function requestCloseEdit() {
   if ($('editModal').classList.contains('hidden')) return;
-  if (isDirty() && !confirm('Masz niezapisane zmiany. Zamknąć bez zapisywania?')) return;
+  if (isDirty() && !confirm(t('Masz niezapisane zmiany. Zamknąć bez zapisywania?'))) return;
   finishEdit(null);
 }
 
@@ -284,7 +284,7 @@ function openEdit(item, prefill) {
     id: null, format: 'vinyl', coverFile: null, coverUrl: null, newCoverUrl: null, wishlist: currentFormat === 'wishlist'
   };
   if (prefill) applyResult(prefill, true);
-  $('editTitle').textContent = item ? 'Edytuj pozycję' : 'Dodaj pozycję';
+  $('editTitle').textContent = item ? t('Edytuj pozycję') : t('Dodaj pozycję');
   $('btnDelete').classList.toggle('hidden', !item);
   if (!prefill) fillForm(editingItem);
   setCoverPreview(editingItem.newCoverUrl || editingItem.coverUrl);
@@ -328,22 +328,22 @@ function applyResult(r, intoNewItem) {
     const ta = $('fTracks');
     const prevPlaceholder = ta.placeholder;
     const startValue = ta.value;
-    ta.placeholder = 'Pobieram listę utworów…';
+    ta.placeholder = t('Pobieram listę utworów…');
     window.api
       .fetchTracks({ source: r.source, sourceId: r.sourceId })
       .then((res) => {
         if (seq !== trackFetchSeq) return; // okno zamknięto lub wybrano inny wynik
         ta.placeholder = prevPlaceholder;
-        if (res && res.error) toast('Nie udało się pobrać listy utworów: ' + res.error, 6000);
+        if (res && res.error) toast(t('Nie udało się pobrać listy utworów: {message}', { message: res.error }), 6000);
         else if (res && res.text) {
-          if (ta.value !== startValue && ta.value.trim()) toast('Lista utworów pobrana, ale pole było edytowane — nie nadpisano.', 5000);
+          if (ta.value !== startValue && ta.value.trim()) toast(t('Lista utworów pobrana, ale pole było edytowane — nie nadpisano.'), 5000);
           else ta.value = res.text;
         }
       })
       .catch((e) => {
         if (seq === trackFetchSeq) {
           ta.placeholder = prevPlaceholder;
-          toast('Nie udało się pobrać listy utworów: ' + e.message, 6000);
+          toast(t('Nie udało się pobrać listy utworów: {message}', { message: e.message }), 6000);
         }
       });
   }
@@ -354,7 +354,7 @@ function renderOnlineResults(results, errors, counts) {
   const errBox = $('onlineErrors');
   const info = $('onlineInfo');
   if (counts) {
-    info.textContent = 'Znaleziono — Discogs: ' + counts.discogs + ' · MusicBrainz: ' + counts.musicbrainz;
+    info.textContent = t('Znaleziono — Discogs: {d} · MusicBrainz: {m}', { d: counts.discogs, m: counts.musicbrainz });
     info.classList.remove('hidden');
   } else {
     info.classList.add('hidden');
@@ -365,15 +365,15 @@ function renderOnlineResults(results, errors, counts) {
     const b = document.createElement('button');
     b.className = 'btn btn-small';
     b.classList.add('btn-inline');
-    b.textContent = 'Otwórz Ustawienia';
+    b.textContent = t('Otwórz Ustawienia');
     b.addEventListener('click', openSettings);
     errBox.appendChild(b);
   }
   errBox.classList.toggle('hidden', !(errors && errors.length));
 
   if (!results.length) {
-    box.innerHTML = '<div class="online-result"><div class="or-main"><div class="or-sub">Brak wyników.' +
-      (/token/i.test(errText) ? ' Polskie wydania najłatwiej znaleźć przez Discogs — dodaj token w Ustawieniach.' : '') +
+    box.innerHTML = '<div class="online-result"><div class="or-main"><div class="or-sub">' + esc(t('Brak wyników.')) +
+      (/token/i.test(errText) ? esc(t(' Polskie wydania najłatwiej znaleźć przez Discogs — dodaj token w Ustawieniach.')) : '') +
       '</div></div></div>';
     box.classList.remove('hidden');
     return;
@@ -411,16 +411,16 @@ async function onlineSearch() {
   const btn = $('btnOnlineSearch');
   const seq = ++searchSeq;
   btn.disabled = true;
-  btn.querySelector('.lbl').textContent = 'Szukam…';
+  btn.querySelector('.lbl').textContent = t('Szukam…');
   try {
     const isBarcode = /^[0-9\s-]{7,16}$/.test(q);
     const res = await window.api.searchRemote(isBarcode ? { barcode: q.replace(/\D/g, '') } : { query: q });
     if (seq === searchSeq && !$('editModal').classList.contains('hidden')) renderOnlineResults(res.results, res.errors, res.counts);
   } catch (e) {
-    toast('Błąd wyszukiwania: ' + e.message);
+    toast(t('Błąd wyszukiwania: {message}', { message: e.message }));
   } finally {
     btn.disabled = false;
-    btn.querySelector('.lbl').textContent = 'Szukaj';
+    btn.querySelector('.lbl').textContent = t('Szukaj');
   }
 }
 
@@ -441,7 +441,7 @@ async function saveEdit() {
     wishlist: $('fWishlist').checked
   });
   if (!item.artist && !item.title) {
-    toast('Podaj przynajmniej wykonawcę lub tytuł.');
+    toast(t('Podaj przynajmniej wykonawcę lub tytuł.'));
     return;
   }
   if (!item.id) {
@@ -456,24 +456,26 @@ async function saveEdit() {
         return;
       }
     } else if (dup) {
-      const what = dup.reason === 'barcode' ? 'Pozycja z tym kodem kreskowym' : 'Podobna pozycja (ten sam wykonawca, tytuł i format)';
-      if (!confirm(what + ' już jest w kolekcji: „' + (dup.item.artist || '?') + ' — ' + (dup.item.title || '?') + '”. Dodać mimo to?')) return;
+      const key = dup.reason === 'barcode'
+        ? 'Pozycja z tym kodem kreskowym już jest w kolekcji: „{name}”. Dodać mimo to?'
+        : 'Podobna pozycja (ten sam wykonawca, tytuł i format) już jest w kolekcji: „{name}”. Dodać mimo to?';
+      if (!confirm(t(key, { name: (dup.item.artist || '?') + ' — ' + (dup.item.title || '?') }))) return;
     }
   }
   const btn = $('btnSave');
   btn.disabled = true;
-  btn.textContent = 'Zapisuję…';
+  btn.textContent = t('Zapisuję…');
   try {
     const saved = await window.api.saveItem(item);
     finishEdit(saved.coverFile);
     await refresh();
-    if (saved.coverFailed) toast('Zapisano, ale nie udało się pobrać okładki (sprawdź połączenie lub wybierz plik ręcznie).', 7000);
-    else toast(item.id ? 'Zapisano zmiany.' : 'Dodano do kolekcji: ' + (item.artist || item.title));
+    if (saved.coverFailed) toast(t('Zapisano, ale nie udało się pobrać okładki (sprawdź połączenie lub wybierz plik ręcznie).'), 7000);
+    else toast(item.id ? t('Zapisano zmiany.') : t('Dodano do kolekcji: {name}', { name: item.artist || item.title }));
   } catch (e) {
-    toast('Błąd zapisu: ' + e.message);
+    toast(t('Błąd zapisu: {message}', { message: e.message }));
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Zapisz';
+    btn.textContent = t('Zapisz');
   }
 }
 
@@ -491,10 +493,10 @@ async function openPhone() {
   $('phoneQr').src = info.qr;
   $('phoneUrl').textContent = info.url;
   $('phoneAlt').textContent = (info.altUrls && info.altUrls.length)
-    ? 'Adresy zapasowe (gdy główny nie działa): ' + info.altUrls.join('  ·  ')
+    ? t('Adresy zapasowe (gdy główny nie działa): {urls}', { urls: info.altUrls.join('  ·  ') })
     : '';
   $('phoneIdle').textContent = info.idleMinutes || 15;
-  if (!info.serverOk) phoneLog('Uwaga: serwer nie wystartował (port zajęty?). Uruchom aplikację ponownie.');
+  if (!info.serverOk) phoneLog(t('Uwaga: serwer nie wystartował (port zajęty?). Uruchom aplikację ponownie.'));
   openModal('phoneModal');
 }
 
@@ -506,7 +508,7 @@ let batchQueue = Promise.resolve();
 async function handleBatchScan(data) {
   const r = data.results[0];
   if (!r) {
-    phoneLog('✖ Kod ' + data.barcode + ': brak wyników — dodaj tę pozycję ręcznie.');
+    phoneLog('✖ ' + t('Kod {code}: brak wyników — dodaj tę pozycję ręcznie.', { code: data.barcode }));
     return;
   }
   const cand = {
@@ -531,7 +533,7 @@ async function handleBatchScan(data) {
     return;
   }
   if (dup) {
-    phoneLog('⏭ Pominięto duplikat: ' + name);
+    phoneLog('⏭ ' + t('Pominięto duplikat: {name}', { name }));
     return;
   }
   try {
@@ -542,15 +544,15 @@ async function handleBatchScan(data) {
     }
     await window.api.saveItem(Object.assign({ id: null, tracklist, notes: '', condition: '', coverFile: null, newCoverUrl: r.coverUrl || null }, cand));
     await refresh();
-    phoneLog('✔ Dodano: ' + name);
+    phoneLog('✔ ' + t('Dodano: {name}', { name }));
   } catch (e) {
-    phoneLog('✖ Błąd zapisu (' + name + '): ' + e.message);
+    phoneLog('✖ ' + t('Błąd zapisu ({name}): {message}', { name, message: e.message }));
   }
 }
 
 window.api.onPhoneEvent((data) => {
   if (data.type === 'barcode') {
-    phoneLog('Odebrano kod ' + data.barcode + ' — znaleziono wyników: ' + data.results.length);
+    phoneLog(t('Odebrano kod {code} — znaleziono wyników: {n}', { code: data.barcode, n: data.results.length }));
     if ($('batchMode').checked && $('editModal').classList.contains('hidden')) {
       batchQueue = batchQueue.then(() => handleBatchScan(data));
       return;
@@ -561,16 +563,16 @@ window.api.onPhoneEvent((data) => {
       $('onlineQuery').value = data.barcode;
       if (!$('fBarcode').value) $('fBarcode').value = data.barcode;
       renderOnlineResults(data.results, data.errors, data.counts);
-      toast('Zeskanowano kod ' + data.barcode + '. Formularz zostawiono bez zmian — wybierz wynik z listy, jeśli pasuje.', 6000);
+      toast(t('Zeskanowano kod {code}. Formularz zostawiono bez zmian — wybierz wynik z listy, jeśli pasuje.', { code: data.barcode }), 6000);
     } else if (data.results.length) {
       openEdit(null, Object.assign({}, data.results[0], { barcode: data.results[0].barcode || data.barcode }));
       renderOnlineResults(data.results, data.errors, data.counts);
-      toast('Zeskanowano kod ' + data.barcode + '. Wybierz właściwe wydanie z listy lub zapisz.');
+      toast(t('Zeskanowano kod {code}. Wybierz właściwe wydanie z listy lub zapisz.', { code: data.barcode }));
     } else {
       openEdit(null);
       $('fBarcode').value = data.barcode;
       const err = (data.errors || []).join(' · ');
-      toast('Kod ' + data.barcode + ' — brak wyników w bazach.' + (err ? ' (' + err + ')' : ''), 6000);
+      toast(t('Kod {code} — brak wyników w bazach.', { code: data.barcode }) + (err ? ' (' + err + ')' : ''), 6000);
     }
   } else if (data.type === 'cover') {
     const modalOpen = !$('editModal').classList.contains('hidden');
@@ -579,9 +581,9 @@ window.api.onPhoneEvent((data) => {
     editingItem.newCoverUrl = null;
     editCovers.add(data.coverFile);
     setCoverPreview(data.coverUrl);
-    toast('Otrzymano zdjęcie okładki z telefonu.');
+    toast(t('Otrzymano zdjęcie okładki z telefonu.'));
   } else if (data.type === 'stopped') {
-    phoneLog('Połączenie z telefonem zakończone (' + data.reason + ').');
+    phoneLog(t('Połączenie z telefonem zakończone ({reason}).', { reason: t(data.reason) }));
   }
 });
 
@@ -642,19 +644,19 @@ $('btnImportCsv').addEventListener('click', () => runImportUi(() => window.api.i
 async function refreshDiscogsStatus() {
   const el = $('discogsStatus');
   el.className = 'discogs-status';
-  el.textContent = 'Sprawdzam połączenie z Discogs…';
+  el.textContent = t('Sprawdzam połączenie z Discogs…');
   const st = await window.api.settingsStatus();
   if (!st.hasToken) {
     el.className = 'discogs-status bad';
-    el.textContent = '✖ Brak tokenu Discogs — wyszukiwanie działa tylko w MusicBrainz.';
+    el.textContent = '✖ ' + t('Brak tokenu Discogs — wyszukiwanie działa tylko w MusicBrainz.');
   } else if (st.valid) {
     el.className = 'discogs-status ok';
-    el.textContent = '✔ Discogs połączony — zalogowano jako „' + st.username + '".';
+    el.textContent = '✔ ' + t('Discogs połączony — zalogowano jako „{user}".', { user: st.username });
   } else if (st.valid === false) {
     el.className = 'discogs-status bad';
-    el.textContent = '✖ Zapisany token jest nieprawidłowy. ' + (st.message || '');
+    el.textContent = '✖ ' + t('Zapisany token jest nieprawidłowy.') + ' ' + (st.message || '');
   } else {
-    el.textContent = '… Nie udało się sprawdzić tokenu: ' + (st.message || 'brak internetu?');
+    el.textContent = '… ' + t('Nie udało się sprawdzić tokenu: {message}', { message: st.message || t('brak internetu?') });
   }
 }
 
@@ -665,6 +667,7 @@ async function openSettings() {
   $('prefUpdatesRow').classList.toggle('hidden', appInfo.inStore);
   $('btnUpdateCheck').classList.toggle('hidden', appInfo.inStore);
   $('prefUpdates').checked = !s.prefs || s.prefs.checkUpdates !== false;
+  $('prefLanguage').value = (s.prefs && s.prefs.language) || 'auto';
   $('updateResult').textContent = '';
   $('syncResult').textContent = '';
   refreshSyncInfo();
@@ -693,6 +696,11 @@ $('btnUpdateSkip').addEventListener('click', () => {
 });
 $('btnUpdateClose').addEventListener('click', () => $('updateBanner').classList.add('hidden'));
 
+$('prefLanguage').addEventListener('change', async (e) => {
+  await window.api.prefsSet({ language: e.target.value });
+  location.reload(); // interfejs jest tłumaczony przy starcie - przeładowanie stosuje nowy język
+});
+
 $('prefUpdates').addEventListener('change', (e) => window.api.prefsSet({ checkUpdates: e.target.checked }));
 $('btnUpdateCheck').addEventListener('click', async () => {
   const out = $('updateResult');
@@ -710,9 +718,9 @@ $('btnEmptyAdd').addEventListener('click', () => openEdit(null));
 $('btnCopyUrl').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText($('phoneUrl').textContent);
-    toast('Skopiowano adres do schowka.');
+    toast(t('Skopiowano adres do schowka.'));
   } catch (e) {
-    toast('Nie udało się skopiować — zaznacz adres i skopiuj ręcznie (Ctrl+C).');
+    toast(t('Nie udało się skopiować — zaznacz adres i skopiuj ręcznie (Ctrl+C).'));
   }
 });
 $('btnPhone').addEventListener('click', openPhone);
@@ -723,11 +731,11 @@ $('onlineQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') onl
 
 $('btnDelete').addEventListener('click', async () => {
   if (!editingItem || !editingItem.id) return;
-  if (!confirm('Usunąć „' + (editingItem.artist || '') + ' — ' + (editingItem.title || '') + '" z kolekcji?')) return;
+  if (!confirm(t('Usunąć „{name}" z kolekcji?', { name: (editingItem.artist || '') + ' — ' + (editingItem.title || '') }))) return;
   await window.api.deleteItem(editingItem.id);
   closeModal('editModal');
   await refresh();
-  toast('Usunięto z kolekcji.');
+  toast(t('Usunięto z kolekcji.'));
 });
 
 $('btnPickCover').addEventListener('click', async () => {
@@ -803,7 +811,7 @@ $('btnStats').addEventListener('click', () => {
     return e;
   };
   const grid = el('div', 'stat-grid');
-  [['Razem', s.total], ['Winyle', s.byFormat.vinyl], ['CD', s.byFormat.cd], ['Kasety', s.byFormat.cassette], ['Z okładką', s.withCover], ['Z listą utworów', s.withTracklist], [t('wish.stats'), s.wishlist]].forEach(([label, n]) => {
+  [[t('Razem'), s.total], [t('Winyle'), s.byFormat.vinyl], ['CD', s.byFormat.cd], [t('Kasety'), s.byFormat.cassette], [t('Z okładką'), s.withCover], [t('Z listą utworów'), s.withTracklist], [t('wish.stats'), s.wishlist]].forEach(([label, n]) => {
     const c = el('div', 'stat-card');
     c.append(el('div', 'stat-num', String(n)), el('div', 'stat-label', label));
     grid.append(c);
@@ -827,10 +835,10 @@ $('btnStats').addEventListener('click', () => {
     });
     body.append(sec);
   };
-  section('Dekady', s.byDecade);
-  section('Najczęstsi wykonawcy', s.topArtists);
-  section('Najczęstsze wytwórnie', s.topLabels);
-  if (!s.total) body.append(el('p', 'hint', 'Kolekcja jest pusta — nie ma jeszcze czego policzyć.'));
+  section(t('Dekady'), s.byDecade);
+  section(t('Najczęstsi wykonawcy'), s.topArtists);
+  section(t('Najczęstsze wytwórnie'), s.topLabels);
+  if (!s.total) body.append(el('p', 'hint', t('Kolekcja jest pusta — nie ma jeszcze czego policzyć.')));
   body.append(buildValueBox(el));
   openModal('statsModal');
 });
@@ -838,7 +846,7 @@ $('btnStats').addEventListener('click', () => {
 $('btnPhoneStop').addEventListener('click', async () => {
   await window.api.phoneStop();
   closeModal('phoneModal');
-  toast('Połączenie z telefonem zakończone.');
+  toast(t('Połączenie z telefonem zakończone.'));
 });
 
 $('btnDiscogsPage').addEventListener('click', () => window.api.openDiscogsTokenPage());
@@ -846,26 +854,26 @@ $('btnDiscogsPage').addEventListener('click', () => window.api.openDiscogsTokenP
 $('btnSaveSettings').addEventListener('click', async () => {
   const btn = $('btnSaveSettings');
   btn.disabled = true;
-  btn.textContent = 'Sprawdzam token…';
+  btn.textContent = t('Sprawdzam token…');
   try {
     const r = await window.api.saveSettings({ discogsToken: $('discogsToken').value });
     if (r.ok) {
-      if (r.username) toast('Token poprawny — połączono z Discogs jako „' + r.username + '". Zapisano.', 5000);
-      else toast('Zapisano ustawienia (bez tokenu Discogs).');
+      if (r.username) toast(t('Token poprawny — połączono z Discogs jako „{user}". Zapisano.', { user: r.username }), 5000);
+      else toast(t('Zapisano ustawienia (bez tokenu Discogs).'));
       refreshDiscogsStatus();
     } else {
       toast('⚠ ' + r.message, 7000);
     }
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Zapisz ustawienia';
+    btn.textContent = t('Zapisz ustawienia');
   }
 });
 
 $('btnExport').addEventListener('click', async () => {
   const r = await window.api.exportBackup();
-  if (r.ok) toast('Utworzono kopię zapasową (' + r.count + ' pozycji' + (r.tokenIncluded ? ', z tokenem Discogs' : '') + '): ' + r.path, 6000);
-  else if (!r.canceled) toast('Błąd kopii zapasowej: ' + r.message);
+  if (r.ok) toast(t(r.tokenIncluded ? 'Utworzono kopię zapasową ({n} pozycji, z tokenem Discogs): {path}' : 'Utworzono kopię zapasową ({n} pozycji): {path}', { n: r.count, path: r.path }), 6000);
+  else if (!r.canceled) toast(t('Błąd kopii zapasowej: {message}', { message: r.message }));
 });
 
 $('btnImport').addEventListener('click', async () => {
@@ -873,29 +881,29 @@ $('btnImport').addEventListener('click', async () => {
   if (r.ok) {
     closeModal('settingsModal');
   } else if (!r.canceled) {
-    toast('Błąd przywracania: ' + r.message, 6000);
+    toast(t('Błąd przywracania: {message}', { message: r.message }), 6000);
   }
 });
 
 $('btnOrphans').addEventListener('click', async () => {
   const r = await window.api.coverCleanup();
   if (r.canceled) return;
-  if (!r.removed && !r.failed) toast('Nie ma nieużywanych okładek.');
-  else toast('Przeniesiono do Kosza: ' + r.removed + ' okładek' + (r.failed ? ' (nie udało się: ' + r.failed + ')' : '') + '.', 6000);
+  if (!r.removed && !r.failed) toast(t('Nie ma nieużywanych okładek.'));
+  else toast(t('Przeniesiono do Kosza: {n} okładek.', { n: r.removed }) + (r.failed ? ' ' + t('(nie udało się: {n})', { n: r.failed }) : ''), 6000);
   refreshOrphanInfo();
 });
 
 async function refreshOrphanInfo() {
   const o = await window.api.coverOrphans();
   $('orphanInfo').textContent = o.count
-    ? 'Nieużywane okładki: ' + o.count + ' (' + (o.bytes / 1048576).toFixed(1) + ' MB).'
-    : 'Brak nieużywanych okładek.';
+    ? t('Nieużywane okładki: {n} ({mb} MB).', { n: o.count, mb: (o.bytes / 1048576).toFixed(1) })
+    : t('Brak nieużywanych okładek.');
 }
 
 $('btnExcel').addEventListener('click', async () => {
   const r = await window.api.exportExcel();
-  if (r.ok) toast('Wyeksportowano ' + r.count + ' pozycji do: ' + r.path, 6000);
-  else if (!r.canceled) toast('Błąd eksportu: ' + r.message, 6000);
+  if (r.ok) toast(t('Wyeksportowano {n} pozycji do: {path}', { n: r.count, path: r.path }), 6000);
+  else if (!r.canceled) toast(t('Błąd eksportu: {message}', { message: r.message }), 6000);
 });
 
 document.querySelectorAll('#viewToggle .chip').forEach((btn) => {

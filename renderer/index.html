@@ -137,12 +137,12 @@
             <label>Stan
               <select id="fCondition">
                 <option value="">—</option>
-                <option>Nowy (M)</option>
-                <option>Prawie nowy (NM)</option>
-                <option>Bardzo dobry+ (VG+)</option>
-                <option>Bardzo dobry (VG)</option>
-                <option>Dobry (G)</option>
-                <option>Słaby (F/P)</option>
+                <option value="Nowy (M)">Nowy (M)</option>
+                <option value="Prawie nowy (NM)">Prawie nowy (NM)</option>
+                <option value="Bardzo dobry+ (VG+)">Bardzo dobry+ (VG+)</option>
+                <option value="Bardzo dobry (VG)">Bardzo dobry (VG)</option>
+                <option value="Dobry (G)">Dobry (G)</option>
+                <option value="Słaby (F/P)">Słaby (F/P)</option>
               </select>
             </label>
             <label class="span2">Lista utworów
@@ -230,6 +230,15 @@
           <button id="btnImportCsv" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-table"/></svg><span data-i18n="import.csv">Importuj z pliku CSV…</span></button>
         </div>
         <hr/>
+        <h3>Język</h3>
+        <label class="settings-label">
+          <select id="prefLanguage" aria-label="Język">
+            <option value="auto">Automatycznie (język systemu)</option>
+            <option value="pl">Polski</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <hr/>
         <h3 data-i18n="sync.section">Synchronizacja z folderem</h3>
         <p class="hint" data-i18n="sync.hint">Wybierz folder synchronizowany przez OneDrive lub Dysk Google.</p>
         <p class="hint" id="syncInfo"></p>
@@ -276,6 +285,7 @@
   <script src="i18n.js"></script>
   <script src="lang-pl.js"></script>
   <script src="lang-en.js"></script>
+  <script src="lang-en-ui.js"></script>
   <script src="dedupe.js"></script>
   <script src="stats.js"></script>
   <script src="app.js"></script>

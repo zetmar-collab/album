@@ -1,6 +1,6 @@
 # Polityka prywatności — Album
 
-Ostatnia aktualizacja: 2026-11-05
+Ostatnia aktualizacja: 2026-11-14
 
 Aplikacja **Album** (kolekcja winyli, CD i kaset) jest tworzona i utrzymywana przez Marka Zettela (zetmar). Poniżej opisano dokładnie, jakie dane aplikacja przetwarza i dlaczego.
 
@@ -10,6 +10,9 @@ Aplikacja **Album** (kolekcja winyli, CD i kaset) jest tworzona i utrzymywana pr
 - **Zapytania wyszukiwania** (nazwa wykonawcy, tytuł albumu lub kod kreskowy) — wysyłane do zewnętrznych, publicznych baz danych muzycznych **MusicBrainz** ([polityka prywatności](https://metabrainz.org/privacy)) oraz, jeśli podasz własny token, **Discogs** ([polityka prywatności](https://www.discogs.com/privacy)) — wyłącznie w celu pobrania metadanych i okładki wyszukiwanej płyty. Te zapytania trafiają bezpośrednio z Twojego komputera do serwerów MusicBrainz/Discogs — deweloper aplikacji nie widzi ani nie przechowuje tych zapytań.
 - **Token Discogs** (opcjonalny, wklejany ręcznie w Ustawieniach) — zapisywany wyłącznie lokalnie na Twoim komputerze (tam, gdzie system to umożliwia, w postaci zaszyfrowanej magazynem systemowym), używany tylko do autoryzacji zapytań do API Discogs i przesyłany wyłącznie nagłówkiem do serwerów Discogs.
 - **Zdjęcia z telefonu** (kod kreskowy, okładka) — gdy używasz funkcji skanowania telefonem, telefon łączy się z aplikacją **bezpośrednio przez lokalną sieć Wi-Fi** (nie przez internet) i przesyła zdjęcie do programu na komputerze. Serwer w sieci lokalnej jest uruchamiany dopiero po otwarciu okna „Skanuj telefonem”, jest chroniony jednorazowym kodem zawartym w kodzie QR i wyłącza się po 15 minutach bezczynności lub na żądanie. Zdjęcie nie opuszcza Twojej sieci lokalnej i nie jest wysyłane do dewelopera ani do żadnej chmury.
+- **Sprawdzanie aktualizacji** (tylko poza wersją ze Sklepu Microsoft, do wyłączenia w Ustawieniach) — raz na dobę aplikacja pyta publiczne API GitHuba (api.github.com) o numer najnowszego wydania. Nie wysyła żadnych danych o Tobie ani o kolekcji; niczego nie pobiera ani nie instaluje automatycznie.
+- **Import i wycena z Discogs** — na Twoje żądanie aplikacja pobiera z Discogs (z użyciem Twojego tokenu) listę pozycji z Twojego konta lub aktualne ceny ofert dla wydań z Twojej kolekcji. Zapytania zawierają identyfikatory wydań Discogs.
+- **Synchronizacja z folderem** — jeśli ją włączysz, aplikacja zapisuje w wybranym przez Ciebie folderze plik kopii kolekcji (bez tokenu Discogs). Jeśli folder jest synchronizowany przez usługę chmurową (np. OneDrive), plik trafia do tego dostawcy na zasadach jego polityki prywatności; deweloper aplikacji nie ma do niego dostępu.
 - **Kopie zapasowe** — tworzone wyłącznie na żądanie użytkownika i zapisywane jako plik na dysku wskazanym przez użytkownika. Token Discogs jest dołączany do kopii tylko za Twoją wyraźną zgodą.
 
 ## Czego aplikacja NIE robi
@@ -41,7 +44,7 @@ Pytania dotyczące prywatności: [github.com/zetmar-collab/album](https://github
 
 # Privacy Policy — Album (English)
 
-Last updated: 2026-11-05
+Last updated: 2026-11-14
 
 **Album** (a vinyl/CD/cassette collection manager) is developed and maintained by Marek Zettel (zetmar).
 
@@ -51,6 +54,9 @@ Last updated: 2026-11-05
 - **Search queries** (artist/title text or barcode) are sent to the public **MusicBrainz** ([privacy policy](https://metabrainz.org/privacy)) and, if you supply your own token, **Discogs** ([privacy policy](https://www.discogs.com/privacy)) APIs, solely to fetch release metadata and cover art. These requests go directly from your computer to MusicBrainz/Discogs — the app developer never sees or stores them.
 - **Your Discogs token** (optional, entered manually in Settings) is stored only locally on your computer (encrypted with the operating system's secure storage where available) and is used only to authorize Discogs API requests, sent only in a request header to Discogs servers.
 - **Phone photos** (barcode, cover art) — when using the phone-scan feature, your phone connects to the app **directly over your local Wi-Fi network** (not the internet) and uploads the photo to the app on your PC. The local-network server is started only when you open the "Scan with phone" window, is protected by a one-time code embedded in the QR code, and stops after 15 minutes of inactivity or on request. The photo never leaves your local network and is never sent to the developer or any cloud service.
+- **Update check** (outside the Microsoft Store version; can be turned off in Settings) — once a day the app asks the public GitHub API (api.github.com) for the latest release number. It sends no data about you or your collection and never downloads or installs anything automatically.
+- **Discogs import and valuation** — on your request the app fetches from Discogs (using your token) the items of your account or current listing prices for releases in your collection. Requests contain Discogs release identifiers.
+- **Folder sync** — if you turn it on, the app writes a copy of your collection (without the Discogs token) to a folder you choose. If that folder is synced by a cloud service (e.g. OneDrive), the file goes to that provider under its privacy policy; the app developer has no access to it.
 - **Backups** are created only when you explicitly request one and are saved to a file location you choose. Your Discogs token is included only if you explicitly agree.
 
 ## What the app does NOT do

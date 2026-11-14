@@ -28,7 +28,12 @@ Dane kolekcji są zapisywane w profilu użytkownika (Windows: `%APPDATA%\Album\a
 - Wyszukiwanie, filtrowanie po formacie, sortowanie, stan nośnika, notatki
 - **Tryb serii** (okno „Skanuj telefonem”): kolejne zeskanowane kody są zapisywane automatycznie (pierwszy wynik, z okładką i listą utworów), duplikaty są pomijane — wygodne przy dodawaniu większej partii płyt
 - **Wykrywanie duplikatów** po kodzie kreskowym oraz po wykonawcy, tytule i formacie
-- **Statystyki** kolekcji (📈): liczba pozycji wg formatu, dekady, najczęstsi wykonawcy i wytwórnie
+- **Statystyki** kolekcji: liczba pozycji wg formatu, dekady, najczęstsi wykonawcy i wytwórnie, a także **orientacyjna wartość** (najniższe oferty na Discogs, w wybranej walucie)
+- **Lista życzeń**: osobny widok pozycji, których jeszcze nie masz (komputer i Android); skan lub wyszukiwanie pozycji z listy życzeń oznacza ją jako posiadaną
+- **Import z Discogs**: cała kolekcja z konta (API) albo z pliku CSV (Discogs → Collection → Export); duplikaty są pomijane
+- **Synchronizacja przez folder** (OneDrive, Dysk Google, Dropbox): plik `Album-sync.zip` z łączeniem zmian z kilku komputerów; token Discogs nigdy tam nie trafia
+- **Powiadomienie o nowej wersji** (poza wersją ze Sklepu): raz na dobę sprawdza GitHub; do wyłączenia w Ustawieniach
+- **Język interfejsu**: polski i angielski (automatycznie wg systemu albo wybór w Ustawieniach)
 - **Konserwacja**: czyszczenie nieużywanych okładek (Ustawienia) — po potwierdzeniu, do Kosza
 - **Kopia zapasowa**: eksport i przywracanie całej kolekcji wraz z okładkami (plik ZIP) — Ustawienia ⚙. Przy przywracaniu poprzednia wersja kolekcji zostaje zapisana jako `collection.json.bak`.
 - Zapis danych jest atomowy; uszkodzony plik kolekcji nie jest po cichu nadpisywany — aplikacja przywraca ostatnią poprawną wersję i informuje o tym w oknie dialogowym.
