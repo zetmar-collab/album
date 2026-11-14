@@ -2,6 +2,15 @@
 
 (function (root) {
   const entries = {
+    // --- lista życzeń ---
+    'wish.chip': 'Lista życzeń',
+    'wish.field': 'Na liście życzeń (jeszcze jej nie mam)',
+    'wish.moveConfirm': 'Ta pozycja jest na Twojej liście życzeń: „{name}”. Oznaczyć ją jako posiadaną?',
+    'wish.moved': 'Przeniesiono z listy życzeń do kolekcji: {name}',
+    'wish.empty': 'Lista życzeń jest pusta. Dodaj pozycję i zaznacz „Na liście życzeń”.',
+    'wish.badge': 'Lista życzeń',
+    'wish.stats': 'Na liście życzeń',
+    'wish.own': 'Mam ją',
     // --- wycena ---
     'value.title': 'Wartość rynkowa (orientacyjnie)',
     'value.summary': '≈ {total} {currency}',

@@ -16,8 +16,13 @@
     const labels = new Map();
     let withTracklist = 0;
     let withCover = 0;
+    let wishlist = 0;
     for (const i of items) {
       if (!i) continue;
+      if (i.wishlist) {
+        wishlist++; // lista życzeń nie wchodzi do statystyk kolekcji
+        continue;
+      }
       if (byFormat[i.format] !== undefined) byFormat[i.format]++;
       const y = /^\d{4}/.exec(String(i.year || ''));
       if (y) {
@@ -32,7 +37,8 @@
       if (i.coverFile) withCover++;
     }
     return {
-      total: items.filter(Boolean).length,
+      total: items.filter((i) => i && !i.wishlist).length,
+      wishlist,
       byFormat,
       byDecade: [...decades.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count })),
       topArtists: top(artists, 5),

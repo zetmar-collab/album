@@ -2,6 +2,15 @@
 
 (function (root) {
   const entries = {
+    // --- wishlist ---
+    'wish.chip': 'Wishlist',
+    'wish.field': 'On my wishlist (I do not own it yet)',
+    'wish.moveConfirm': 'This item is on your wishlist: “{name}”. Mark it as owned?',
+    'wish.moved': 'Moved from the wishlist to your collection: {name}',
+    'wish.empty': 'Your wishlist is empty. Add an item and tick “On my wishlist”.',
+    'wish.badge': 'Wishlist',
+    'wish.stats': 'On wishlist',
+    'wish.own': 'I own it',
     // --- valuation ---
     'value.title': 'Market value (approximate)',
     'value.summary': '≈ {total} {currency}',

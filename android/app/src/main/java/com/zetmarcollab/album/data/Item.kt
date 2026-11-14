@@ -35,6 +35,8 @@ data class Item(
   val coverFile: String? = null,
   val source: String? = null,
   val sourceId: String? = null,
+  /** true = pozycja z listy życzeń (jeszcze jej nie mam) - to samo pole co w aplikacji na komputer. */
+  val wishlist: Boolean = false,
   val addedAt: String = nowIso(),
 ) {
   fun toJson(): JSONObject =
@@ -55,6 +57,7 @@ data class Item(
       put("coverFile", coverFile ?: JSONObject.NULL)
       put("source", source ?: JSONObject.NULL)
       put("sourceId", sourceId ?: JSONObject.NULL)
+      put("wishlist", wishlist)
       put("addedAt", addedAt)
     }
 
@@ -84,6 +87,7 @@ data class Item(
         coverFile = strOrNull("coverFile")?.let { java.io.File(it).name }?.ifEmpty { null },
         source = strOrNull("source"),
         sourceId = strOrNull("sourceId"),
+        wishlist = o.optBoolean("wishlist", false),
         addedAt = strOrNull("addedAt") ?: nowIso(),
       )
     }

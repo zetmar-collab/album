@@ -118,6 +118,8 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
 
   var query by mutableStateOf("")
   var formatFilter by mutableStateOf<Format?>(null)
+  /** true = widok listy życzeń (pozycje z flagą wishlist); false = tylko posiadane. */
+  var wishlistFilter by mutableStateOf(false)
   var sortKey by mutableStateOf(SortKey.ARTIST)
   var gridView by mutableStateOf(prefs.getString("view", "grid") != "list")
     private set
@@ -136,7 +138,8 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
     val collator = Collator.getInstance(Locale.forLanguageTag("pl"))
     val filtered =
       items.filter { i ->
-        (formatFilter == null || i.format == formatFilter) &&
+        i.wishlist == wishlistFilter &&
+          (formatFilter == null || i.format == formatFilter) &&
           (words.isEmpty() ||
             norm(listOf(i.artist, i.title, i.label, i.genre, i.year, i.catalogNumber, i.barcode, i.notes).joinToString(" ")).let { hay -> words.all { it in hay } })
       }
@@ -207,7 +210,7 @@ class AlbumViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   fun openNew() {
-    resetEditState(Item(format = formatFilter ?: Format.VINYL), true)
+    resetEditState(Item(format = formatFilter ?: Format.VINYL, wishlist = wishlistFilter), true)
     screen = Screen.EDIT
   }
 

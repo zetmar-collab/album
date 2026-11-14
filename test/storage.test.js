@@ -81,14 +81,17 @@ test('safeBaseName i coverPath nie wypuszczają ścieżki poza katalog okładek'
   assert.equal(coverPath(dir, '..'), null);
 });
 
-test('sanitizeItem: tylko 17 znanych pól, format z białej listy, liczby jako tekst', () => {
+test('sanitizeItem: tylko 18 znanych pól, format z białej listy, liczby jako tekst', () => {
   const it = sanitizeItem({ id: 'a', format: 'dvd', artist: ' X ', year: 1999, coverFile: '../../evil.jpg', hack: 1, __proto__: { p: 1 } });
   assert.equal(it.format, 'vinyl');
   assert.equal(it.artist, 'X');
   assert.equal(it.year, '1999');
   assert.equal(it.coverFile, 'evil.jpg');
   assert.equal(it.hack, undefined);
-  assert.equal(Object.keys(it).length, 17);
+  assert.equal(Object.keys(it).length, 18);
+  assert.equal(it.wishlist, false);
+  assert.equal(sanitizeItem({ wishlist: true }).wishlist, true);
+  assert.equal(sanitizeItem({ wishlist: 'tak' }).wishlist, false, 'tylko prawdziwy boolean');
   assert.equal(sanitizeItem(null), null);
   assert.equal(sanitizeItem([1]), null);
   assert.equal(sanitizeItem('x'), null);

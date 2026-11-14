@@ -722,10 +722,11 @@ function setupIpc() {
         'Liczba utworów': i.tracklist ? i.tracklist.split('\n').filter((l) => l.trim()).length : '',
         'Lista utworów': i.tracklist || '',
         'Notatki': i.notes,
+        'Status': i.wishlist ? 'Lista życzeń' : 'W kolekcji',
         'Data dodania': (i.addedAt || '').slice(0, 10)
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
-      ws['!cols'] = [8, 26, 32, 6, 20, 14, 15, 16, 8, 18, 10, 50, 30, 12].map((w) => ({ wch: w }));
+      ws['!cols'] = [8, 26, 32, 6, 20, 14, 15, 16, 8, 18, 10, 50, 30, 14, 12].map((w) => ({ wch: w }));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Kolekcja');
       XLSX.writeFile(wb, r.filePath);

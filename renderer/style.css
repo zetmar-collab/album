@@ -315,6 +315,11 @@ select:hover { border-color: var(--border-strong); }
 .row .badge { justify-self: start; }
 
 .update-banner { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: var(--accent-soft); border-bottom: 1px solid var(--border); font-size: 13px; }
+.chip-wish .ic { stroke: var(--accent); }
+.chip-wish.active .ic { stroke: #fff; }
+.wish-badge { position: absolute; top: 8px; left: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; background: rgba(20, 21, 26, .85); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+.wish-badge .ic { width: 15px; height: 15px; }
+.row .wish-inline { color: var(--accent); margin-left: 6px; }
 .empty-inline { grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--muted); }
 .empty { text-align: center; padding: 72px 20px; color: var(--muted); }
 .empty-icon { width: 72px; height: 72px; color: #5b6175; margin: 0 auto 14px; display: block; stroke-width: 1.4; }

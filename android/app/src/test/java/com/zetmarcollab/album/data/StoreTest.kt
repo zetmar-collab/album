@@ -94,7 +94,7 @@ class StoreTest {
       val arr = JSONArray(z.getInputStream(z.getEntry("collection.json")).readBytes().toString(Charsets.UTF_8))
       val keys = arr.getJSONObject(0).keys().asSequence().toSet()
       assertEquals(
-        setOf("id", "format", "artist", "title", "year", "label", "catalogNumber", "barcode", "genre", "country", "condition", "tracklist", "notes", "coverFile", "source", "sourceId", "addedAt"),
+        setOf("id", "format", "artist", "title", "year", "label", "catalogNumber", "barcode", "genre", "country", "condition", "tracklist", "notes", "coverFile", "source", "sourceId", "wishlist", "addedAt"),
         keys,
       )
       // domyslnie token NIE trafia do kopii (jest sekretem), ale settings.json zostaje dla zgodnosci z desktopem
@@ -228,6 +228,21 @@ class StoreTest {
         override fun decrypt(cipher: String): String = error("klucz utracony")
       }
     assertEquals("", Store(dir, broken).discogsToken)
+  }
+
+  @Test
+  fun wishlistFlagSurvivesRoundTripAndDefaultsToFalse() {
+    val a = newStore("w1")
+    a.upsert(Item(id = "w", artist = "Chcę", title = "Mieć", wishlist = true))
+    a.upsert(Item(id = "o", artist = "Mam", title = "To"))
+    val out = File(root, "wish.zip")
+    out.outputStream().use { a.exportBackup(it) }
+    val b = newStore("w2")
+    b.importBackup(out, ImportMode.REPLACE)
+    assertTrue(b.items.first { it.id == "w" }.wishlist)
+    assertFalse(b.items.first { it.id == "o" }.wishlist)
+    // stary plik bez pola wishlist nadal się wczytuje (domyślnie: posiadana)
+    assertFalse(Item.fromJson(JSONObject("""{"id":"x","format":"cd"}""")).wishlist)
   }
 
   @Test

@@ -47,8 +47,9 @@ import com.zetmarcollab.album.theme.AlbumPanel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(vm: AlbumViewModel) {
-  val visible = remember(vm.items, vm.query, vm.formatFilter, vm.sortKey) { vm.visibleItems() }
-  val all = vm.items
+  val visible = remember(vm.items, vm.query, vm.formatFilter, vm.sortKey, vm.wishlistFilter) { vm.visibleItems() }
+  val all = vm.items.filter { !it.wishlist }
+  val wishCount = vm.items.count { it.wishlist }
 
   Scaffold(
     containerColor = MaterialTheme.colorScheme.background,
@@ -86,10 +87,11 @@ fun MainScreen(vm: AlbumViewModel) {
       )
 
       LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { FilterChip(selected = vm.formatFilter == null, onClick = { vm.formatFilter = null }, label = { Text("Wszystkie") }) }
-        item { FilterChip(selected = vm.formatFilter == Format.VINYL, onClick = { vm.formatFilter = Format.VINYL }, label = { Text("Winyle") }) }
-        item { FilterChip(selected = vm.formatFilter == Format.CD, onClick = { vm.formatFilter = Format.CD }, label = { Text("CD") }) }
-        item { FilterChip(selected = vm.formatFilter == Format.CASSETTE, onClick = { vm.formatFilter = Format.CASSETTE }, label = { Text("Kasety") }) }
+        item { FilterChip(selected = vm.formatFilter == null && !vm.wishlistFilter, onClick = { vm.formatFilter = null; vm.wishlistFilter = false }, label = { Text("Wszystkie") }) }
+        item { FilterChip(selected = vm.formatFilter == Format.VINYL && !vm.wishlistFilter, onClick = { vm.formatFilter = Format.VINYL; vm.wishlistFilter = false }, label = { Text("Winyle") }) }
+        item { FilterChip(selected = vm.formatFilter == Format.CD && !vm.wishlistFilter, onClick = { vm.formatFilter = Format.CD; vm.wishlistFilter = false }, label = { Text("CD") }) }
+        item { FilterChip(selected = vm.formatFilter == Format.CASSETTE && !vm.wishlistFilter, onClick = { vm.formatFilter = Format.CASSETTE; vm.wishlistFilter = false }, label = { Text("Kasety") }) }
+        item { FilterChip(selected = vm.wishlistFilter, onClick = { vm.formatFilter = null; vm.wishlistFilter = true }, label = { Text("Lista życzeń ($wishCount)") }) }
       }
 
       Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -100,7 +102,7 @@ fun MainScreen(vm: AlbumViewModel) {
         FilterChip(selected = !vm.gridView, onClick = { vm.changeView(false) }, label = { Text("☰") })
       }
 
-      if (all.isEmpty()) {
+      if (all.isEmpty() && !vm.wishlistFilter) {
         Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
           Text("Twoja kolekcja jest pusta", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
           Spacer(Modifier.size(8.dp))
@@ -111,7 +113,10 @@ fun MainScreen(vm: AlbumViewModel) {
         }
       } else if (visible.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.TopCenter) {
-          Text("Brak pozycji pasujących do filtra.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(
+            if (vm.wishlistFilter && wishCount == 0) "Lista życzeń jest pusta. Dodaj pozycję i włącz „Na liście życzeń”." else "Brak pozycji pasujących do filtra.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
       } else if (vm.gridView) {
         LazyVerticalGrid(

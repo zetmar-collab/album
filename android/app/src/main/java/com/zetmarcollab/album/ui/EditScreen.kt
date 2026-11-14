@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -136,6 +137,10 @@ fun EditScreen(vm: AlbumViewModel, onPickGallery: () -> Unit, onTakePhoto: () ->
         hint = if (vm.tracksLoading) "⏳ Pobieram listę utworów…" else null,
       ) { v -> vm.updateForm { it.copy(tracklist = v) } }
       Field("Notatki", form.notes, minLines = 2, singleLine = false, capitalize = true) { v -> vm.updateForm { it.copy(notes = v) } }
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Switch(checked = form.wishlist, onCheckedChange = { v -> vm.updateForm { it.copy(wishlist = v) } })
+        Text("Na liście życzeń (jeszcze jej nie mam)", Modifier.weight(1f))
+      }
 
       if (!vm.isNew) {
         Button(

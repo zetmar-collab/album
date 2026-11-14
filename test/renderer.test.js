@@ -33,8 +33,10 @@ test('computeStats liczy formaty, dekady i najczęstszych wykonawców', () => {
     { format: 'vinyl', year: '1979', artist: 'Queen', label: 'EMI' },
     { format: 'cd', year: '1997', artist: 'Daft Punk', label: 'Virgin' },
     { format: 'cd', year: '', artist: '', label: '' },
+    { format: 'cd', year: '2001', artist: 'Chcę', label: 'X', wishlist: true },
     null
   ]);
+  assert.equal(s.wishlist, 1);
   assert.equal(s.total, 4);
   assert.deepEqual(s.byFormat, { vinyl: 2, cd: 2, cassette: 0 });
   assert.deepEqual(s.byDecade, [{ name: '1970s', count: 2 }, { name: '1990s', count: 1 }]);

@@ -116,6 +116,8 @@ async function refresh() {
 function render() {
   const words = norm(searchText).split(/\s+/).filter(Boolean);
   let list = allItems.filter((i) => {
+    if (currentFormat === 'wishlist') return i.wishlist && words.every((w) => i._hay.includes(w));
+    if (i.wishlist) return false; // lista życzeń ma własny widok
     if (currentFormat !== 'all' && i.format !== currentFormat) return false;
     return words.every((w) => i._hay.includes(w));
   });
@@ -127,20 +129,22 @@ function render() {
   });
 
   const counts = { vinyl: 0, cd: 0, cassette: 0 };
-  allItems.forEach((i) => { if (counts[i.format] !== undefined) counts[i.format]++; });
+  const owned = allItems.filter((i) => !i.wishlist);
+  const wishCount = allItems.length - owned.length;
+  owned.forEach((i) => { if (counts[i.format] !== undefined) counts[i.format]++; });
   $('stats').textContent =
-    allItems.length + ' pozycji · ' + counts.vinyl + ' winyli · ' + counts.cd + ' CD · ' + counts.cassette + ' kaset';
+    owned.length + ' pozycji · ' + counts.vinyl + ' winyli · ' + counts.cd + ' CD · ' + counts.cassette + ' kaset';
 
   document.querySelectorAll('#formatFilters .chip').forEach((chip) => {
     const f = chip.dataset.format;
     const n = chip.querySelector('.chip-count');
-    if (n) n.textContent = f === 'all' ? allItems.length : counts[f];
+    if (n) n.textContent = f === 'all' ? owned.length : f === 'wishlist' ? wishCount : counts[f];
   });
 
   const grid = $('grid');
   grid.innerHTML = '';
   grid.className = currentView === 'list' ? 'list' : 'grid';
-  $('emptyState').classList.toggle('hidden', allItems.length > 0);
+  $('emptyState').classList.toggle('hidden', owned.length > 0 || currentFormat === 'wishlist');
   const frag = document.createDocumentFragment();
 
   if (currentView === 'list' && list.length) {
@@ -152,10 +156,10 @@ function render() {
       '<span class="c-label">Wytwórnia</span><span class="c-cond">Stan</span><span></span>';
     frag.appendChild(head);
   }
-  if (!list.length && allItems.length) {
+  if (!list.length && (allItems.length || currentFormat === 'wishlist')) {
     const none = document.createElement('div');
     none.className = 'empty-inline';
-    none.textContent = 'Brak pozycji pasujących do wyszukiwania lub filtra.';
+    none.textContent = currentFormat === 'wishlist' && !wishCount ? t('wish.empty') : 'Brak pozycji pasujących do wyszukiwania lub filtra.';
     frag.appendChild(none);
   }
 
@@ -199,6 +203,13 @@ function render() {
       toast('Usunięto z kolekcji.');
     });
     el.appendChild(del);
+    if (item.wishlist && currentView !== 'list') {
+      const w = document.createElement('span');
+      w.className = 'wish-badge';
+      w.title = t('wish.badge');
+      w.innerHTML = icon('heart');
+      el.appendChild(w);
+    }
     el.tabIndex = 0;
     el.title = (item.artist || '(nieznany)') + ' — ' + (item.title || '(bez tytułu)');
     el.setAttribute('role', 'button');
@@ -234,13 +245,14 @@ function fillForm(data) {
   $('fCondition').value = data.condition || '';
   $('fTracks').value = data.tracklist || '';
   $('fNotes').value = data.notes || '';
+  $('fWishlist').checked = !!data.wishlist;
 }
 
 function formState() {
   return JSON.stringify([
     $('fFormat').value, $('fArtist').value, $('fTitle').value, $('fYear').value, $('fLabel').value,
     $('fCatalog').value, $('fBarcode').value, $('fGenre').value, $('fCountry').value, $('fCondition').value,
-    $('fTracks').value, $('fNotes').value,
+    $('fTracks').value, $('fNotes').value, $('fWishlist').checked,
     (editingItem && editingItem.coverFile) || '', (editingItem && editingItem.newCoverUrl) || ''
   ]);
 }
@@ -269,7 +281,7 @@ function openEdit(item, prefill) {
   if (!$('editModal').classList.contains('hidden')) finishEdit(null);
   trackFetchSeq++;
   editingItem = item ? Object.assign({}, item) : {
-    id: null, format: 'vinyl', coverFile: null, coverUrl: null, newCoverUrl: null
+    id: null, format: 'vinyl', coverFile: null, coverUrl: null, newCoverUrl: null, wishlist: currentFormat === 'wishlist'
   };
   if (prefill) applyResult(prefill, true);
   $('editTitle').textContent = item ? 'Edytuj pozycję' : 'Dodaj pozycję';
@@ -425,7 +437,8 @@ async function saveEdit() {
     country: $('fCountry').value,
     condition: $('fCondition').value,
     tracklist: $('fTracks').value,
-    notes: $('fNotes').value
+    notes: $('fNotes').value,
+    wishlist: $('fWishlist').checked
   });
   if (!item.artist && !item.title) {
     toast('Podaj przynajmniej wykonawcę lub tytuł.');
@@ -433,7 +446,16 @@ async function saveEdit() {
   }
   if (!item.id) {
     const dup = findDuplicate(allItems, item);
-    if (dup) {
+    if (dup && dup.item.wishlist && !item.wishlist) {
+      const nm = (dup.item.artist || '?') + ' — ' + (dup.item.title || '?');
+      if (confirm(t('wish.moveConfirm', { name: nm }))) {
+        await window.api.saveItem(Object.assign({}, dup.item, { wishlist: false }));
+        finishEdit(null);
+        await refresh();
+        toast(t('wish.moved', { name: nm }));
+        return;
+      }
+    } else if (dup) {
       const what = dup.reason === 'barcode' ? 'Pozycja z tym kodem kreskowym' : 'Podobna pozycja (ten sam wykonawca, tytuł i format)';
       if (!confirm(what + ' już jest w kolekcji: „' + (dup.item.artist || '?') + ' — ' + (dup.item.title || '?') + '”. Dodać mimo to?')) return;
     }
@@ -502,6 +524,12 @@ async function handleBatchScan(data) {
   };
   const name = (cand.artist || '?') + ' — ' + (cand.title || '?');
   const dup = findDuplicate(allItems, cand);
+  if (dup && dup.item.wishlist) {
+    await window.api.saveItem(Object.assign({}, dup.item, { wishlist: false }));
+    await refresh();
+    phoneLog('♥ ' + t('wish.moved', { name }));
+    return;
+  }
   if (dup) {
     phoneLog('⏭ Pominięto duplikat: ' + name);
     return;
@@ -741,7 +769,7 @@ $('btnStats').addEventListener('click', () => {
     return e;
   };
   const grid = el('div', 'stat-grid');
-  [['Razem', s.total], ['Winyle', s.byFormat.vinyl], ['CD', s.byFormat.cd], ['Kasety', s.byFormat.cassette], ['Z okładką', s.withCover], ['Z listą utworów', s.withTracklist]].forEach(([label, n]) => {
+  [['Razem', s.total], ['Winyle', s.byFormat.vinyl], ['CD', s.byFormat.cd], ['Kasety', s.byFormat.cassette], ['Z okładką', s.withCover], ['Z listą utworów', s.withTracklist], [t('wish.stats'), s.wishlist]].forEach(([label, n]) => {
     const c = el('div', 'stat-card');
     c.append(el('div', 'stat-num', String(n)), el('div', 'stat-label', label));
     grid.append(c);
